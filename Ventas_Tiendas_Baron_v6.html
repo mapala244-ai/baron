@@ -1367,6 +1367,16 @@ document.addEventListener('DOMContentLoaded',()=>{
   document.getElementById('g-fecha')?.addEventListener('change',function(){
     document.getElementById('g-mes').value=mesFromDate(this.value);
   });
+  // Inicializar app: verificar sesión existente
+  (async function initApp(){
+    showLoginScreen();
+    const {data:{session}} = await db.auth.getSession();
+    if(session){
+      await loadSession(session);
+    } else {
+      showLoginScreen();
+    }
+  })();
 });
 
 async function saveVenta(){
