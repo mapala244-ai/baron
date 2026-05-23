@@ -692,8 +692,8 @@ function showLoginScreen(){
 function showAppScreen(){
   document.getElementById('login-screen').style.display='none';
   document.querySelector('nav.navbar').style.display='flex';
+  document.getElementById('page-dashboard').classList.add('active');
   applyPermissionsToUI();
-  renderDashboard();
 }
 
 /** Aplica permisos en la interfaz: oculta/muestra botones y tabs */
@@ -751,21 +751,43 @@ async function loadSession(session){
   if(!session){showLoginScreen();return;}
   currentUser = session.user;
   // Cargar perfil
-  const {data:prof} = await db.from('profiles').select('*').eq('id',currentUser.id).single();
-  if(!prof || prof.activo===false){
+  const {data:prof, error:profErr} = await db.from('profiles').select('*').eq('id',currentUser.id).single();
+  
+  // Si no hay perfil, crear uno básico y continuar
+  if(profErr || !prof){
+    // Intentar insertar perfil básico
+    await db.from('profiles').upsert({
+      id: currentUser.id,
+      email: currentUser.email,
+      nombre: currentUser.email.split('@')[0],
+      activo: true
+    });
+    // Asignar rol admin si es el primer usuario
+    const {data:adminRol} = await db.from('roles').select('id').eq('nombre','admin').single();
+    if(adminRol){
+      await db.from('profiles').update({role_id: adminRol.id}).eq('id', currentUser.id);
+    }
+    const {data:profNuevo} = await db.from('profiles').select('*').eq('id',currentUser.id).single();
+    currentProfile = profNuevo || {id:currentUser.id, email:currentUser.email, nombre:currentUser.email, activo:true};
+  } else if(prof.activo===false){
     await db.auth.signOut();
-    document.getElementById('login-err').textContent='Tu cuenta está desactivada. Contacta al administrador.';
+    const errEl = document.getElementById('login-err');
+    if(errEl) errEl.textContent='Tu cuenta está desactivada. Contacta al administrador.';
     showLoginScreen(); return;
+  } else {
+    currentProfile = prof;
   }
-  currentProfile = prof;
+
   // Cargar permisos
   const {data:perms} = await db.rpc('get_my_permissions');
   myPermissions = (perms||[]).map(p=>p.code);
-  // canales_permitidos ya viene en el perfil (puede ser null = todos)
   // Cargar roles para UI
   const {data:roles} = await db.from('roles').select('id,nombre,descripcion').order('id');
   rolesCache = roles||[];
   showAppScreen();
+  // Cargar datos
+  await Promise.all([fetchVentas(), fetchGastos()]);
+  renderDashboard();
 }
 
 /** Listener de cambios de auth (refresco de token, etc.) */
