@@ -186,6 +186,7 @@ tr.fila-anulado:hover td{background:#fceaea !important;}
     <button class="nav-tab" onclick="showPage('resumen',event)">📋 Resumen</button>
     <button class="nav-tab" onclick="showPage('medios',event)">💳 Medios pago</button>
     <button class="nav-tab" onclick="showPage('meta',event)">📣 Meta</button>
+    <button class="nav-tab" id="tab-pedidos" onclick="showPage('pedidos',event)">📦 Pedidos</button>
     <button class="nav-tab" id="tab-usuarios" style="display:none" onclick="showPage('usuarios',event)">👥 Usuarios</button>
   </div>
   <div id="nav-user-info">
@@ -556,6 +557,142 @@ tr.fila-anulado:hover td{background:#fceaea !important;}
   </div>
 </div>
 
+<!-- PEDIDOS TIENDA VIRTUAL -->
+<div id="page-pedidos" class="page">
+  <style>
+    .pedido-estado{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700;}
+    .est-Pendiente{background:#fff3cd;color:#856404;}
+    .est-Confirmado{background:#d1ecf1;color:#0c5460;}
+    .est-En-produccion,.est-En{background:#e2d9f3;color:#4a235a;}
+    .est-Despachado{background:#cce5ff;color:#004085;}
+    .est-Entregado{background:#d4edda;color:#155724;}
+    .est-Pagado{background:#d4edda;color:#155724;}
+    .est-Anulado{background:#f8d7da;color:#721c24;}
+    .est-Devuelto{background:#ffe5b4;color:#7d4e00;}
+    .pedidos-filtros{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center;}
+    .pedidos-filtros input,.pedidos-filtros select{padding:6px 10px;border:1px solid var(--border2);border-radius:var(--radius-sm);background:var(--bg2);color:var(--text);font-size:13px;}
+    #tabla-pedidos td{font-size:12px;vertical-align:middle;}
+    .btn-sync{background:var(--accent);color:#fff;border:none;padding:7px 14px;border-radius:var(--radius-sm);font-size:13px;font-weight:600;cursor:pointer;}
+    .btn-sync:hover{opacity:.85;}
+  </style>
+  <div class="sec-hdr">
+    <div class="sec-title">📦 Pedidos — Tienda Virtual</div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <button class="btn-sync" onclick="sincronizarShopify()">🔄 Sincronizar Shopify</button>
+      <span style="font-size:11px;color:var(--text2)" id="sync-shopify-info"></span>
+      <button class="btn btn-primary" onclick="abrirModalPedido(null)">+ Pedido manual</button>
+    </div>
+  </div>
+  <div class="pedidos-filtros">
+    <input type="text" id="filtro-pedido-buscar" placeholder="🔍 Buscar cliente, # pedido, guía..." oninput="filtrarPedidos()" style="min-width:220px">
+    <select id="filtro-pedido-estado" onchange="filtrarPedidos()">
+      <option value="">Todos los estados</option>
+      <option>Pendiente</option><option>Confirmado</option><option>En produccion</option>
+      <option>Despachado</option><option>Entregado</option><option>Pagado</option>
+      <option>Anulado</option><option>Devuelto</option>
+    </select>
+    <input type="date" id="filtro-pedido-desde" onchange="filtrarPedidos()">
+    <input type="date" id="filtro-pedido-hasta" onchange="filtrarPedidos()">
+    <span id="pedidos-count" style="font-size:12px;color:var(--text2)"></span>
+  </div>
+  <div style="overflow-x:auto">
+    <table id="tabla-pedidos">
+      <thead><tr>
+        <th># Pedido</th><th>Fecha</th><th>Cliente</th><th>Ciudad</th>
+        <th>Referencia</th><th>Talla</th><th>Valor</th><th>Pago</th>
+        <th>Estado</th><th>Guía</th><th>Asignado</th><th></th>
+      </tr></thead>
+      <tbody id="tbody-pedidos"></tbody>
+    </table>
+  </div>
+  <p id="no-pedidos" class="empty-state" style="display:none">
+    <span class="icon">📦</span><br>No hay pedidos. Sincroniza con Shopify o crea uno manual.
+  </p>
+</div>
+
+<!-- MODAL PEDIDO -->
+<div class="modal-overlay" id="modal-pedido">
+  <div class="modal" style="max-width:700px;max-height:90vh;overflow-y:auto;">
+    <button class="modal-close" onclick="cerrarModalPedido()">✕</button>
+    <div class="modal-title" id="mp-titulo">Pedido</div>
+    <input type="hidden" id="mp-id">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;">
+      <div>
+        <div style="font-weight:700;font-size:11px;color:var(--text2);text-transform:uppercase;margin-bottom:8px;border-bottom:1px solid var(--border);padding-bottom:4px;">📋 Identificación</div>
+        <div class="form-group"><label>Estado</label>
+          <select id="mp-estado">
+            <option>Pendiente</option><option>Confirmado</option><option>En produccion</option>
+            <option>Despachado</option><option>Entregado</option><option>Pagado</option>
+            <option>Anulado</option><option>Devuelto</option>
+          </select>
+        </div>
+        <div class="form-group"><label># Pedido / TB</label><input type="text" id="mp-num-pedido"></div>
+        <div class="form-group"><label>Fecha</label><input type="date" id="mp-fecha"></div>
+        <div class="form-group"><label>Confirmado</label><input type="text" id="mp-confirmado" placeholder="Fecha o código de confirmación"></div>
+        <div class="form-group"><label>Fecha compromiso envío</label><input type="date" id="mp-fecha-compromiso"></div>
+        <div class="form-group"><label>Asignado a</label><input type="text" id="mp-asignado" placeholder="Mireya, Milena..."></div>
+        <div class="form-group"><label>Observaciones</label><textarea id="mp-observaciones" rows="2" style="width:100%;padding:6px;border:1px solid var(--border2);border-radius:var(--radius-sm);background:var(--bg2);color:var(--text);font-size:13px;resize:vertical;box-sizing:border-box;"></textarea></div>
+      </div>
+      <div>
+        <div style="font-weight:700;font-size:11px;color:var(--text2);text-transform:uppercase;margin-bottom:8px;border-bottom:1px solid var(--border);padding-bottom:4px;">👟 Producto</div>
+        <div class="form-group"><label>Referencia</label><input type="text" id="mp-referencia"></div>
+        <div class="form-group"><label>Color</label><input type="text" id="mp-color"></div>
+        <div class="form-group"><label>Talla</label><input type="text" id="mp-talla"></div>
+        <div class="form-group"><label>Proceso producción</label><input type="text" id="mp-proceso"></div>
+        <div class="form-group"><label># Vale</label><input type="text" id="mp-vale"></div>
+        <div class="form-group"><label>Remisión</label><input type="text" id="mp-remision"></div>
+      </div>
+      <div style="grid-column:1/-1">
+        <div style="font-weight:700;font-size:11px;color:var(--text2);text-transform:uppercase;margin-bottom:8px;border-bottom:1px solid var(--border);padding-bottom:4px;">👤 Cliente</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+          <div class="form-group"><label>Nombre *</label><input type="text" id="mp-nombre-cliente"></div>
+          <div class="form-group"><label>Cédula</label><input type="text" id="mp-cedula"></div>
+          <div class="form-group"><label>Ciudad</label><input type="text" id="mp-ciudad"></div>
+          <div class="form-group" style="grid-column:1/-1"><label>Dirección</label><input type="text" id="mp-direccion"></div>
+          <div class="form-group"><label>Teléfono 1</label><input type="text" id="mp-tel1"></div>
+          <div class="form-group"><label>Teléfono 2</label><input type="text" id="mp-tel2"></div>
+        </div>
+      </div>
+      <div>
+        <div style="font-weight:700;font-size:11px;color:var(--text2);text-transform:uppercase;margin-bottom:8px;border-bottom:1px solid var(--border);padding-bottom:4px;">💰 Financiero</div>
+        <div class="form-group"><label>Valor venta</label><input type="number" id="mp-valor" oninput="calcularSaldoPedido()"></div>
+        <div class="form-group"><label>Abono 1</label><input type="number" id="mp-abono1" oninput="calcularSaldoPedido()"></div>
+        <div class="form-group"><label>Abono 2</label><input type="number" id="mp-abono2" oninput="calcularSaldoPedido()"></div>
+        <div class="form-group"><label>Saldo</label><input type="number" id="mp-saldo" readonly style="background:var(--bg3)"></div>
+        <div class="form-group"><label>Forma de pago</label>
+          <select id="mp-forma-pago">
+            <option>Pago en casa</option><option>Wompi</option><option>Addi</option>
+            <option>Sistecredito</option><option>Nequi</option><option>Transferencia</option>
+            <option>Efectivo</option><option>Bold</option><option>Standar</option>
+          </select>
+        </div>
+      </div>
+      <div>
+        <div style="font-weight:700;font-size:11px;color:var(--text2);text-transform:uppercase;margin-bottom:8px;border-bottom:1px solid var(--border);padding-bottom:4px;">🚚 Despacho</div>
+        <div class="form-group"><label>Fecha despacho</label><input type="date" id="mp-fecha-despacho"></div>
+        <div class="form-group"><label>Transportadora</label>
+          <select id="mp-transportadora">
+            <option value=""></option>
+            <option>Coordinadora</option><option>Interrapidisimo</option>
+            <option>Servientrega</option><option>Domicilio</option>
+            <option>Tienda física</option><option>NA</option>
+          </select>
+        </div>
+        <div class="form-group"><label># Guía</label><input type="text" id="mp-guia"></div>
+        <div class="form-group"><label>Novedades</label><input type="text" id="mp-novedades"></div>
+        <div class="form-group"><label>Estado novedad</label><input type="text" id="mp-estado-novedad"></div>
+        <div class="form-group"><label>Fecha devolución</label><input type="date" id="mp-devolucion"></div>
+        <div class="form-group"><label>Fecha entregado</label><input type="date" id="mp-entregado"></div>
+        <div class="form-group"><label>Fecha pagado</label><input type="date" id="mp-pagado"></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px;border-top:1px solid var(--border);padding-top:14px;">
+      <button class="btn btn-secondary" onclick="cerrarModalPedido()">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarPedido()">💾 Guardar</button>
+    </div>
+  </div>
+</div>
+
 <!-- USUARIOS -->
 <div id="page-usuarios" class="page">
   <div class="sec-hdr">
@@ -700,6 +837,7 @@ function showPage(name,ev){
   if(name==='medios')renderMedios();
   if(name==='meta')showMeta();
   if(name==='usuarios')renderUsuarios();
+  if(name==='pedidos')renderPedidos();
 }
 
 // FETCH
@@ -1464,6 +1602,326 @@ async function toggleActivo(userId, nuevoEstado){
   finally{hideLoading();}
 }
 // ── FIN USUARIOS ──────────────────────────────────────────────
+
+// ── PEDIDOS SHOPIFY ──────────────────────────────────────────
+const SHOPIFY_TOKEN = 'atkn_b70e37c46482ab9b76dc936306cdf665592bc72b95a48ea178d6adcb4c774ac6';
+const SHOPIFY_STORE = 'tiendasbaron';
+let cachedPedidos = [];
+
+async function sincronizarShopify(){
+  const info = document.getElementById('sync-shopify-info');
+  info.textContent = '⏳ Sincronizando...';
+  showLoading('Sincronizando pedidos de Shopify...');
+  try{
+    // Llamamos a Shopify via Edge Function para evitar CORS
+    // Mientras tanto usamos la API directamente con el token
+    const url = `https://cors-anywhere.herokuapp.com/https://${SHOPIFY_STORE}.myshopify.com/admin/api/2024-01/orders.json?status=any&limit=50`;
+    const resp = await fetch(`https://${SHOPIFY_STORE}.myshopify.com/admin/api/2024-01/orders.json?status=any&limit=50`, {
+      headers: {
+        'X-Shopify-Access-Token': SHOPIFY_TOKEN,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if(!resp.ok){
+      // Si hay CORS, usamos la Edge Function
+      await sincronizarViaEdgeFunction();
+      return;
+    }
+
+    const {orders} = await resp.json();
+    await procesarPedidosShopify(orders);
+    info.textContent = `✅ ${orders.length} pedidos sincronizados`;
+  }catch(e){
+    // Intentar via Edge Function
+    try{
+      await sincronizarViaEdgeFunction();
+    }catch(e2){
+      info.textContent = '❌ Error de conexión';
+      toast('Error sincronizando: '+e2.message,'danger');
+    }
+  }finally{hideLoading();}
+}
+
+async function sincronizarViaEdgeFunction(){
+  const {data:{session}} = await db.auth.getSession();
+  const resp = await fetch(`${SURL}/functions/v1/shopify-sync`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + session.access_token,
+      'apikey': SKEY
+    },
+    body: JSON.stringify({store: SHOPIFY_STORE, token: SHOPIFY_TOKEN})
+  });
+  const result = await resp.json();
+  if(!resp.ok) throw new Error(result.error || 'Error en Edge Function');
+  const info = document.getElementById('sync-shopify-info');
+  info.textContent = `✅ ${result.count || 0} pedidos sincronizados`;
+  await renderPedidos();
+}
+
+async function procesarPedidosShopify(orders){
+  for(const order of orders){
+    const shipping = order.shipping_address || {};
+    const customer = order.customer || {};
+    const lineItem = order.line_items?.[0] || {};
+    const variant = lineItem.variant_title || '';
+
+    // Extraer talla del variant (ej: "37" o "Color: Blanco / Talla: 37")
+    const tallaMatch = variant.match(/(\d{2})/);
+    const talla = tallaMatch ? tallaMatch[1] : '';
+    const colorMatch = variant.match(/^([^/]+)/);
+    const color = colorMatch ? colorMatch[1].trim() : '';
+
+    // Forma de pago
+    let formaPago = 'Pago en casa';
+    if(order.payment_gateway === 'wompi') formaPago = 'Wompi';
+    else if(order.payment_gateway === 'addi') formaPago = 'Addi';
+    else if(order.financial_status === 'paid') formaPago = 'Pagado online';
+
+    const valorProducto = parseFloat(order.subtotal_price || 0);
+    const valorEnvio = parseFloat(order.total_shipping_price_set?.shop_money?.amount || 0);
+    const valorTotal = parseFloat(order.total_price || 0);
+
+    // Cédula desde nota o campos personalizados
+    let cedula = '';
+    if(order.note) {
+      const cedMatch = order.note.match(/[cC][eé]dula[:\s]+([0-9.]+)/);
+      if(cedMatch) cedula = cedMatch[1];
+    }
+    // También buscar en note_attributes
+    if(!cedula && order.note_attributes){
+      const cedAttr = order.note_attributes.find(a =>
+        a.name.toLowerCase().includes('cedula') || a.name.toLowerCase().includes('cédula')
+      );
+      if(cedAttr) cedula = cedAttr.value;
+    }
+
+    const pedido = {
+      shopify_order_id: String(order.id),
+      shopify_order_number: String(order.order_number || order.name),
+      num_pedido: order.name,
+      fecha: order.created_at?.split('T')[0],
+      nombre_cliente: `${shipping.first_name||''} ${shipping.last_name||''}`.trim() || customer.email || '',
+      cedula,
+      ciudad: shipping.city || '',
+      direccion: `${shipping.address1||''} ${shipping.address2||''}`.trim(),
+      telefono_1: shipping.phone || customer.phone || '',
+      referencia: lineItem.name || lineItem.title || '',
+      color,
+      talla,
+      valor_venta: valorTotal,
+      forma_pago: formaPago,
+      estado: order.financial_status === 'paid' ? 'Pagado' : 'Pendiente',
+    };
+
+    // Insertar solo si no existe
+    await db.from('pedidos_virtual')
+      .upsert(pedido, {onConflict: 'shopify_order_id', ignoreDuplicates: false});
+  }
+  await renderPedidos();
+}
+
+async function renderPedidos(){
+  showLoading('Cargando pedidos...');
+  try{
+    const {data, error} = await db.from('pedidos_virtual')
+      .select('*').order('fecha', {ascending: false}).limit(500);
+    if(error) throw error;
+    cachedPedidos = data || [];
+    filtrarPedidos();
+  }catch(e){toast('Error cargando pedidos: '+e.message,'danger');}
+  finally{hideLoading();}
+}
+
+function filtrarPedidos(){
+  const buscar = document.getElementById('filtro-pedido-buscar').value.toLowerCase();
+  const estado = document.getElementById('filtro-pedido-estado').value;
+  const desde = document.getElementById('filtro-pedido-desde').value;
+  const hasta = document.getElementById('filtro-pedido-hasta').value;
+
+  let lista = cachedPedidos.filter(p => {
+    if(estado && p.estado !== estado) return false;
+    if(desde && p.fecha < desde) return false;
+    if(hasta && p.fecha > hasta) return false;
+    if(buscar){
+      const txt = `${p.nombre_cliente||''} ${p.num_pedido||''} ${p.num_guia||''} ${p.ciudad||''} ${p.referencia||''}`.toLowerCase();
+      if(!txt.includes(buscar)) return false;
+    }
+    return true;
+  });
+
+  document.getElementById('pedidos-count').textContent = `${lista.length} pedidos`;
+  const tbody = document.getElementById('tbody-pedidos');
+  const empty = document.getElementById('no-pedidos');
+
+  if(!lista.length){tbody.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+
+  const fmt = n => n ? new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',minimumFractionDigits:0}).format(n) : '—';
+  const estClass = e => 'est-'+(e||'Pendiente').replace(/ /g,'-');
+
+  tbody.innerHTML = lista.map(p => `
+    <tr>
+      <td><strong>${p.num_pedido||'—'}</strong><br><span style="font-size:10px;color:var(--text2)">${p.shopify_order_number||''}</span></td>
+      <td>${p.fecha||'—'}</td>
+      <td>${p.nombre_cliente||'—'}</td>
+      <td style="color:var(--text2)">${p.ciudad||'—'}</td>
+      <td>${p.referencia||'—'}</td>
+      <td style="text-align:center">${p.talla||'—'}</td>
+      <td>${fmt(p.valor_venta)}</td>
+      <td style="font-size:11px">${p.forma_pago||'—'}</td>
+      <td><span class="pedido-estado ${estClass(p.estado)}">${p.estado||'Pendiente'}</span></td>
+      <td style="font-size:11px">${p.num_guia||'—'}</td>
+      <td style="font-size:11px;color:var(--text2)">${p.asignado||'—'}</td>
+      <td><button class="btn btn-secondary btn-sm" onclick="abrirModalPedido('${p.id}')">✏️</button></td>
+    </tr>`).join('');
+}
+
+function calcularSaldoPedido(){
+  const v = parseFloat(document.getElementById('mp-valor').value)||0;
+  const a1 = parseFloat(document.getElementById('mp-abono1').value)||0;
+  const a2 = parseFloat(document.getElementById('mp-abono2').value)||0;
+  document.getElementById('mp-saldo').value = v - a1 - a2;
+}
+
+function abrirModalPedido(id){
+  const p = id ? cachedPedidos.find(x=>x.id===id) : null;
+  document.getElementById('mp-titulo').textContent = p ? `Pedido ${p.num_pedido||''}` : 'Nuevo pedido';
+  document.getElementById('mp-id').value = p?.id || '';
+  document.getElementById('mp-estado').value = p?.estado || 'Pendiente';
+  document.getElementById('mp-num-pedido').value = p?.num_pedido || '';
+  document.getElementById('mp-fecha').value = p?.fecha || todayISO();
+  document.getElementById('mp-confirmado').value = p?.confirmado || '';
+  document.getElementById('mp-fecha-compromiso').value = p?.fecha_compromiso || '';
+  document.getElementById('mp-asignado').value = p?.asignado || '';
+  document.getElementById('mp-observaciones').value = p?.observaciones || '';
+  document.getElementById('mp-referencia').value = p?.referencia || '';
+  document.getElementById('mp-color').value = p?.color || '';
+  document.getElementById('mp-talla').value = p?.talla || '';
+  document.getElementById('mp-proceso').value = p?.proceso_produccion || '';
+  document.getElementById('mp-vale').value = p?.num_vale || '';
+  document.getElementById('mp-remision').value = p?.remision || '';
+  document.getElementById('mp-nombre-cliente').value = p?.nombre_cliente || '';
+  document.getElementById('mp-cedula').value = p?.cedula || '';
+  document.getElementById('mp-ciudad').value = p?.ciudad || '';
+  document.getElementById('mp-direccion').value = p?.direccion || '';
+  document.getElementById('mp-tel1').value = p?.telefono_1 || '';
+  document.getElementById('mp-tel2').value = p?.telefono_2 || '';
+  document.getElementById('mp-valor').value = p?.valor_venta || '';
+  document.getElementById('mp-abono1').value = p?.abono_1 || '';
+  document.getElementById('mp-abono2').value = p?.abono_2 || '';
+  document.getElementById('mp-saldo').value = p?.saldo || '';
+  document.getElementById('mp-forma-pago').value = p?.forma_pago || 'Pago en casa';
+  document.getElementById('mp-fecha-despacho').value = p?.fecha_despacho || '';
+  document.getElementById('mp-transportadora').value = p?.transportadora || '';
+  document.getElementById('mp-guia').value = p?.num_guia || '';
+  document.getElementById('mp-novedades').value = p?.novedades || '';
+  document.getElementById('mp-estado-novedad').value = p?.estado_novedad || '';
+  document.getElementById('mp-devolucion').value = p?.devolucion || '';
+  document.getElementById('mp-entregado').value = p?.entregado || '';
+  document.getElementById('mp-pagado').value = p?.pagado || '';
+  document.getElementById('modal-pedido').classList.add('open');
+}
+
+function cerrarModalPedido(){
+  document.getElementById('modal-pedido').classList.remove('open');
+}
+
+async function guardarPedido(){
+  const id = document.getElementById('mp-id').value;
+  const nombre = document.getElementById('mp-nombre-cliente').value.trim();
+  if(!nombre){toast('Ingresa el nombre del cliente','danger');return;}
+
+  const valor = parseFloat(document.getElementById('mp-valor').value)||0;
+  const abono1 = parseFloat(document.getElementById('mp-abono1').value)||0;
+  const abono2 = parseFloat(document.getElementById('mp-abono2').value)||0;
+  const estado = document.getElementById('mp-estado').value;
+
+  const data = {
+    estado,
+    num_pedido: document.getElementById('mp-num-pedido').value,
+    fecha: document.getElementById('mp-fecha').value || null,
+    confirmado: document.getElementById('mp-confirmado').value,
+    fecha_compromiso: document.getElementById('mp-fecha-compromiso').value || null,
+    asignado: document.getElementById('mp-asignado').value,
+    observaciones: document.getElementById('mp-observaciones').value,
+    referencia: document.getElementById('mp-referencia').value,
+    color: document.getElementById('mp-color').value,
+    talla: document.getElementById('mp-talla').value,
+    proceso_produccion: document.getElementById('mp-proceso').value,
+    num_vale: document.getElementById('mp-vale').value,
+    remision: document.getElementById('mp-remision').value,
+    nombre_cliente: nombre,
+    cedula: document.getElementById('mp-cedula').value,
+    ciudad: document.getElementById('mp-ciudad').value,
+    direccion: document.getElementById('mp-direccion').value,
+    telefono_1: document.getElementById('mp-tel1').value,
+    telefono_2: document.getElementById('mp-tel2').value,
+    valor_venta: valor,
+    abono_1: abono1,
+    abono_2: abono2,
+    saldo: valor - abono1 - abono2,
+    forma_pago: document.getElementById('mp-forma-pago').value,
+    fecha_despacho: document.getElementById('mp-fecha-despacho').value || null,
+    transportadora: document.getElementById('mp-transportadora').value,
+    num_guia: document.getElementById('mp-guia').value,
+    novedades: document.getElementById('mp-novedades').value,
+    estado_novedad: document.getElementById('mp-estado-novedad').value,
+    devolucion: document.getElementById('mp-devolucion').value || null,
+    entregado: document.getElementById('mp-entregado').value || null,
+    pagado: document.getElementById('mp-pagado').value || null,
+  };
+
+  showLoading('Guardando pedido...');
+  try{
+    if(id){
+      const {error} = await db.from('pedidos_virtual').update(data).eq('id',id);
+      if(error) throw error;
+
+      // Si se marca como Pagado y no está registrado en ventas, registrar
+      const pedidoActual = cachedPedidos.find(p=>p.id===id);
+      if(estado === 'Pagado' && pedidoActual && !pedidoActual.registrado_en_ventas){
+        await registrarEnVentas(id, data);
+      }
+    } else {
+      const {error} = await db.from('pedidos_virtual').insert(data);
+      if(error) throw error;
+    }
+    toast('Pedido guardado ✅','success');
+    cerrarModalPedido();
+    await renderPedidos();
+  }catch(e){toast('Error: '+e.message,'danger');}
+  finally{hideLoading();}
+}
+
+async function registrarEnVentas(pedidoId, data){
+  // Registrar automáticamente en ventas_mb al marcar como Pagado
+  try{
+    const venta = {
+      fecha: data.fecha || todayISO(),
+      mes: mesFromDate(data.fecha || todayISO()),
+      canal: 'Tienda Virtual',
+      cliente: data.nombre_cliente,
+      monto: data.valor_venta,
+      medio_pago: data.forma_pago,
+      estado_pedido: 'Pagado',
+      notas: `Pedido ${data.num_pedido||''} - ${data.referencia||''} T${data.talla||''}`,
+      num_pedido: data.num_pedido,
+      fecha_despacho: data.fecha_despacho || null,
+      transportadora: data.transportadora || null,
+    };
+    const {error} = await db.from('ventas_mb').insert(venta);
+    if(!error){
+      await db.from('pedidos_virtual').update({registrado_en_ventas: true}).eq('id', pedidoId);
+      toast('✅ Venta registrada automáticamente en el módulo de Ventas','success');
+    }
+  }catch(e){
+    console.error('Error registrando en ventas:', e);
+  }
+}
+// ── FIN PEDIDOS ───────────────────────────────────────────────
 
 // INIT: manejado por el módulo de autenticación (window.load arriba)
 </script>
