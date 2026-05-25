@@ -2001,7 +2001,7 @@ async function importarCSVShopify(input){
         shopify_order_id: String(shopifyId),
         shopify_order_number: numPedido,
         num_pedido: numPedido,
-        fecha: fecha,
+        fecha: fecha || null,
         nombre_cliente: (cols[idx['Shipping Name']] || cols[idx['Billing Name']] || '').trim(),
         cedula: cedula,
         ciudad: cols[idx['Shipping City']] || '',
