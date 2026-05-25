@@ -557,142 +557,182 @@ tr.fila-anulado:hover td{background:#fceaea !important;}
   </div>
 </div>
 
-<!-- PEDIDOS TIENDA VIRTUAL -->
+<!-- PEDIDOS -->
 <div id="page-pedidos" class="page">
   <style>
-    .pedido-estado{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700;}
-    .est-Pendiente{background:#fff3cd;color:#856404;}
-    .est-Confirmado{background:#d1ecf1;color:#0c5460;}
-    .est-En-produccion,.est-En{background:#e2d9f3;color:#4a235a;}
-    .est-Despachado{background:#cce5ff;color:#004085;}
-    .est-Entregado{background:#d4edda;color:#155724;}
-    .est-Pagado{background:#d4edda;color:#155724;}
-    .est-Anulado{background:#f8d7da;color:#721c24;}
-    .est-Devuelto{background:#ffe5b4;color:#7d4e00;}
-    .pedidos-filtros{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center;}
-    .pedidos-filtros input,.pedidos-filtros select{padding:6px 10px;border:1px solid var(--border2);border-radius:var(--radius-sm);background:var(--bg2);color:var(--text);font-size:13px;}
-    #tabla-pedidos td{font-size:12px;vertical-align:middle;}
-    .btn-sync{background:var(--accent);color:#fff;border:none;padding:7px 14px;border-radius:var(--radius-sm);font-size:13px;font-weight:600;cursor:pointer;}
-    .btn-sync:hover{opacity:.85;}
+    .tienda-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;text-transform:uppercase;}
+    .tienda-VIRTUAL{background:#dbeafe;color:#1d4ed8;}
+    .tienda-LB{background:#fce7f3;color:#9d174d;}
+    .tienda-MB{background:#ede9fe;color:#5b21b6;}
+    .tienda-MANYCHAT,.tienda-MANY{background:#d1fae5;color:#065f46;}
+    .est-p{background:#fff3cd;color:#856404;display:inline-block;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;}
+    .est-c{background:#d1ecf1;color:#0c5460;display:inline-block;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;}
+    .est-pr{background:#e2d9f3;color:#4a235a;display:inline-block;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;}
+    .est-d{background:#cce5ff;color:#004085;display:inline-block;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;}
+    .est-e{background:#d4edda;color:#155724;display:inline-block;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;}
+    .est-pg{background:#bbf7d0;color:#14532d;display:inline-block;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;}
+    .est-an{background:#f8d7da;color:#721c24;display:inline-block;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;}
+    .est-dv{background:#ffe5b4;color:#7d4e00;display:inline-block;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;}
+    #tabla-pedidos{font-size:12px;}
+    #tabla-pedidos th{font-size:11px;padding:6px 8px;white-space:nowrap;}
+    #tabla-pedidos td{padding:5px 8px;vertical-align:middle;}
+    #tabla-pedidos tr:hover{background:var(--bg2);}
+    .row-pagado{background:#f0fff4!important;}
+    .row-anulado{opacity:.6;background:#fff5f5!important;}
+    .row-devuelto{background:#fffbf0!important;}
+    .saldo-cero{color:var(--success);font-weight:700;}
+    .saldo-pendiente{color:var(--danger);font-weight:700;}
+    .filtros-pedidos{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center;}
+    .filtros-pedidos input,.filtros-pedidos select{padding:5px 9px;border:1px solid var(--border2);border-radius:var(--radius-sm);background:var(--bg2);color:var(--text);font-size:12px;}
   </style>
   <div class="sec-hdr">
-    <div class="sec-title">📦 Pedidos — Tienda Virtual</div>
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-      <button class="btn-sync" onclick="sincronizarShopify()">🔄 Sincronizar Shopify</button>
-      <span style="font-size:11px;color:var(--text2)" id="sync-shopify-info"></span>
-      <label class="btn-sync" style="background:var(--success);cursor:pointer;">
-        📂 Importar CSV
-        <input type="file" id="input-csv-shopify" accept=".csv" style="display:none" onchange="importarCSVShopify(this)">
-      </label>
-      <button class="btn btn-primary" onclick="abrirModalPedido(null)">+ Pedido manual</button>
-    </div>
+    <div class="sec-title">📦 Control de Pedidos y Despachos</div>
+    <button class="btn btn-primary" onclick="abrirModalPedido(null)">+ Nuevo pedido</button>
   </div>
-  <div class="pedidos-filtros">
-    <input type="text" id="filtro-pedido-buscar" placeholder="🔍 Buscar cliente, # pedido, guía..." oninput="filtrarPedidos()" style="min-width:220px">
-    <select id="filtro-pedido-estado" onchange="filtrarPedidos()">
+  <div class="filtros-pedidos">
+    <input type="text" id="fp-buscar" placeholder="🔍 Cliente, # pedido, guía, referencia..." oninput="filtrarPedidos()" style="min-width:230px">
+    <select id="fp-tienda" onchange="filtrarPedidos()">
+      <option value="">Todas las tiendas</option>
+      <option>VIRTUAL</option><option>LB</option><option>MB</option><option>MANY CHAT</option>
+    </select>
+    <select id="fp-estado" onchange="filtrarPedidos()">
       <option value="">Todos los estados</option>
       <option>Pendiente</option><option>Confirmado</option><option>En produccion</option>
       <option>Despachado</option><option>Entregado</option><option>Pagado</option>
       <option>Anulado</option><option>Devuelto</option>
     </select>
-    <input type="date" id="filtro-pedido-desde" onchange="filtrarPedidos()">
-    <input type="date" id="filtro-pedido-hasta" onchange="filtrarPedidos()">
-    <span id="pedidos-count" style="font-size:12px;color:var(--text2)"></span>
+    <input type="date" id="fp-desde" onchange="filtrarPedidos()" title="Desde">
+    <input type="date" id="fp-hasta" onchange="filtrarPedidos()" title="Hasta">
+    <span id="pedidos-count" style="font-size:11px;color:var(--text2);margin-left:4px;"></span>
   </div>
   <div style="overflow-x:auto">
     <table id="tabla-pedidos">
       <thead><tr>
-        <th># Pedido</th><th>Fecha</th><th>Cliente</th><th>Ciudad</th>
-        <th>Referencia</th><th>Talla</th><th>Valor</th><th>Pago</th>
-        <th>Estado</th><th>Guía</th><th>Asignado</th><th></th>
+        <th>Fecha</th><th>Tienda</th><th># Pedido</th><th>Asignado</th>
+        <th>Confirmado</th><th>Vale</th><th>Remisión</th>
+        <th>Referencia</th><th>Color</th><th>Talla</th>
+        <th>Cliente</th><th>Cédula</th><th>Ciudad</th><th>Teléfono</th>
+        <th>Valor</th><th>Abono 1</th><th>Abono 2</th><th>Saldo</th><th>Forma Pago</th>
+        <th>F. Despacho</th><th>Transportadora</th><th># Guía</th>
+        <th>Novedades</th><th>Estado</th><th>Entregado</th><th>Pagado</th>
+        <th></th>
       </tr></thead>
       <tbody id="tbody-pedidos"></tbody>
     </table>
   </div>
   <p id="no-pedidos" class="empty-state" style="display:none">
-    <span class="icon">📦</span><br>No hay pedidos. Sincroniza con Shopify o crea uno manual.
+    <span class="icon">📦</span><br>No hay pedidos registrados.
   </p>
 </div>
 
 <!-- MODAL PEDIDO -->
 <div class="modal-overlay" id="modal-pedido">
-  <div class="modal" style="max-width:700px;max-height:90vh;overflow-y:auto;">
+  <div class="modal" style="max-width:760px;max-height:92vh;overflow-y:auto;">
     <button class="modal-close" onclick="cerrarModalPedido()">✕</button>
-    <div class="modal-title" id="mp-titulo">Pedido</div>
+    <div class="modal-title" id="mp-titulo">Nuevo pedido</div>
     <input type="hidden" id="mp-id">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;">
-      <div>
-        <div style="font-weight:700;font-size:11px;color:var(--text2);text-transform:uppercase;margin-bottom:8px;border-bottom:1px solid var(--border);padding-bottom:4px;">📋 Identificación</div>
-        <div class="form-group"><label>Estado</label>
-          <select id="mp-estado">
-            <option>Pendiente</option><option>Confirmado</option><option>En produccion</option>
-            <option>Despachado</option><option>Entregado</option><option>Pagado</option>
-            <option>Anulado</option><option>Devuelto</option>
+
+    <!-- Fila 1: Identificación -->
+    <div style="background:var(--bg2);border-radius:var(--radius-sm);padding:10px 12px;margin-top:12px;margin-bottom:8px;">
+      <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;margin-bottom:8px;">📋 Identificación del pedido</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
+        <div class="form-group"><label>Fecha *</label><input type="date" id="mp-fecha"></div>
+        <div class="form-group"><label>Tienda</label>
+          <select id="mp-tienda">
+            <option>VIRTUAL</option><option>LB</option><option>MB</option><option>MANY CHAT</option>
           </select>
         </div>
-        <div class="form-group"><label># Pedido / TB</label><input type="text" id="mp-num-pedido"></div>
-        <div class="form-group"><label>Fecha</label><input type="date" id="mp-fecha"></div>
-        <div class="form-group"><label>Confirmado</label><input type="text" id="mp-confirmado" placeholder="Fecha o código de confirmación"></div>
-        <div class="form-group"><label>Fecha compromiso envío</label><input type="date" id="mp-fecha-compromiso"></div>
-        <div class="form-group"><label>Asignado a</label><input type="text" id="mp-asignado" placeholder="Mireya, Milena..."></div>
-        <div class="form-group"><label>Observaciones</label><textarea id="mp-observaciones" rows="2" style="width:100%;padding:6px;border:1px solid var(--border2);border-radius:var(--radius-sm);background:var(--bg2);color:var(--text);font-size:13px;resize:vertical;box-sizing:border-box;"></textarea></div>
+        <div class="form-group"><label># Pedido</label><input type="text" id="mp-num-pedido" placeholder="TB 1234"></div>
+        <div class="form-group"><label>Asignado a</label>
+          <select id="mp-asignado">
+            <option value=""></option>
+            <option>MIREYA</option><option>MILENA</option><option>MAYE</option>
+            <option>ZENOVIA</option><option>AN MORENO</option><option>ANGELA</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Confirmado</label><input type="text" id="mp-confirmado" placeholder="Fecha o nombre"></div>
+        <div class="form-group"><label>F. Compromiso envío</label><input type="date" id="mp-fecha-compromiso"></div>
+        <div class="form-group" style="grid-column:3/-1"><label>Observaciones</label><input type="text" id="mp-observaciones"></div>
       </div>
-      <div>
-        <div style="font-weight:700;font-size:11px;color:var(--text2);text-transform:uppercase;margin-bottom:8px;border-bottom:1px solid var(--border);padding-bottom:4px;">👟 Producto</div>
+    </div>
+
+    <!-- Fila 2: Producción -->
+    <div style="background:var(--bg2);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:8px;">
+      <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;margin-bottom:8px;">👟 Producción</div>
+      <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;">
+        <div class="form-group"><label>Proceso</label><input type="text" id="mp-proceso"></div>
+        <div class="form-group"><label># Vale</label><input type="text" id="mp-vale"></div>
+        <div class="form-group"><label>Remisión</label><input type="text" id="mp-remision"></div>
         <div class="form-group"><label>Referencia</label><input type="text" id="mp-referencia"></div>
         <div class="form-group"><label>Color</label><input type="text" id="mp-color"></div>
         <div class="form-group"><label>Talla</label><input type="text" id="mp-talla"></div>
-        <div class="form-group"><label>Proceso producción</label><input type="text" id="mp-proceso"></div>
-        <div class="form-group"><label># Vale</label><input type="text" id="mp-vale"></div>
-        <div class="form-group"><label>Remisión</label><input type="text" id="mp-remision"></div>
-      </div>
-      <div style="grid-column:1/-1">
-        <div style="font-weight:700;font-size:11px;color:var(--text2);text-transform:uppercase;margin-bottom:8px;border-bottom:1px solid var(--border);padding-bottom:4px;">👤 Cliente</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
-          <div class="form-group"><label>Nombre *</label><input type="text" id="mp-nombre-cliente"></div>
-          <div class="form-group"><label>Cédula</label><input type="text" id="mp-cedula"></div>
-          <div class="form-group"><label>Ciudad</label><input type="text" id="mp-ciudad"></div>
-          <div class="form-group" style="grid-column:1/-1"><label>Dirección</label><input type="text" id="mp-direccion"></div>
-          <div class="form-group"><label>Teléfono 1</label><input type="text" id="mp-tel1"></div>
-          <div class="form-group"><label>Teléfono 2</label><input type="text" id="mp-tel2"></div>
-        </div>
-      </div>
-      <div>
-        <div style="font-weight:700;font-size:11px;color:var(--text2);text-transform:uppercase;margin-bottom:8px;border-bottom:1px solid var(--border);padding-bottom:4px;">💰 Financiero</div>
-        <div class="form-group"><label>Valor venta</label><input type="number" id="mp-valor" oninput="calcularSaldoPedido()"></div>
-        <div class="form-group"><label>Abono 1</label><input type="number" id="mp-abono1" oninput="calcularSaldoPedido()"></div>
-        <div class="form-group"><label>Abono 2</label><input type="number" id="mp-abono2" oninput="calcularSaldoPedido()"></div>
-        <div class="form-group"><label>Saldo</label><input type="number" id="mp-saldo" readonly style="background:var(--bg3)"></div>
-        <div class="form-group"><label>Forma de pago</label>
-          <select id="mp-forma-pago">
-            <option>Pago en casa</option><option>Wompi</option><option>Addi</option>
-            <option>Sistecredito</option><option>Nequi</option><option>Transferencia</option>
-            <option>Efectivo</option><option>Bold</option><option>Standar</option>
-          </select>
-        </div>
-      </div>
-      <div>
-        <div style="font-weight:700;font-size:11px;color:var(--text2);text-transform:uppercase;margin-bottom:8px;border-bottom:1px solid var(--border);padding-bottom:4px;">🚚 Despacho</div>
-        <div class="form-group"><label>Fecha despacho</label><input type="date" id="mp-fecha-despacho"></div>
-        <div class="form-group"><label>Transportadora</label>
-          <select id="mp-transportadora">
-            <option value=""></option>
-            <option>Coordinadora</option><option>Interrapidisimo</option>
-            <option>Servientrega</option><option>Domicilio</option>
-            <option>Tienda física</option><option>NA</option>
-          </select>
-        </div>
-        <div class="form-group"><label># Guía</label><input type="text" id="mp-guia"></div>
-        <div class="form-group"><label>Novedades</label><input type="text" id="mp-novedades"></div>
-        <div class="form-group"><label>Estado novedad</label><input type="text" id="mp-estado-novedad"></div>
-        <div class="form-group"><label>Fecha devolución</label><input type="date" id="mp-devolucion"></div>
-        <div class="form-group"><label>Fecha entregado</label><input type="date" id="mp-entregado"></div>
-        <div class="form-group"><label>Fecha pagado</label><input type="date" id="mp-pagado"></div>
       </div>
     </div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px;border-top:1px solid var(--border);padding-top:14px;">
+
+    <!-- Fila 3: Cliente -->
+    <div style="background:var(--bg2);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:8px;">
+      <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;margin-bottom:8px;">👤 Cliente</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+        <div class="form-group"><label>Nombre *</label><input type="text" id="mp-nombre-cliente"></div>
+        <div class="form-group"><label>Cédula</label><input type="text" id="mp-cedula"></div>
+        <div class="form-group"><label>Ciudad</label><input type="text" id="mp-ciudad"></div>
+        <div class="form-group" style="grid-column:1/-1"><label>Dirección</label><input type="text" id="mp-direccion"></div>
+        <div class="form-group"><label>Teléfono 1</label><input type="text" id="mp-tel1"></div>
+        <div class="form-group"><label>Teléfono 2</label><input type="text" id="mp-tel2"></div>
+      </div>
+    </div>
+
+    <!-- Fila 4: Financiero + Despacho -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+      <div style="background:var(--bg2);border-radius:var(--radius-sm);padding:10px 12px;">
+        <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;margin-bottom:8px;">💰 Financiero</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div class="form-group"><label>Valor venta</label><input type="number" id="mp-valor" oninput="calcularSaldoPedido()"></div>
+          <div class="form-group"><label>Abono 1</label><input type="number" id="mp-abono1" oninput="calcularSaldoPedido()"></div>
+          <div class="form-group"><label>Abono 2</label><input type="number" id="mp-abono2" oninput="calcularSaldoPedido()"></div>
+          <div class="form-group"><label>Saldo</label><input type="number" id="mp-saldo" readonly style="background:var(--bg3);font-weight:700;"></div>
+          <div class="form-group" style="grid-column:1/-1"><label>Forma de pago</label>
+            <select id="mp-forma-pago">
+              <option>Pago en casa</option><option>Wompi</option><option>Addi</option>
+              <option>Sistecredito</option><option>Nequi</option><option>Transferencia</option>
+              <option>Efectivo</option><option>Bold</option><option>Standar</option>
+              <option>Tar Visa</option><option>Trans Bancolombia</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div style="background:var(--bg2);border-radius:var(--radius-sm);padding:10px 12px;">
+        <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;margin-bottom:8px;">🚚 Despacho y seguimiento</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div class="form-group"><label>Estado</label>
+            <select id="mp-estado">
+              <option>Pendiente</option><option>Confirmado</option><option>En produccion</option>
+              <option>Despachado</option><option>Entregado</option><option>Pagado</option>
+              <option>Anulado</option><option>Devuelto</option>
+            </select>
+          </div>
+          <div class="form-group"><label>F. Despacho</label><input type="date" id="mp-fecha-despacho"></div>
+          <div class="form-group"><label>Transportadora</label>
+            <select id="mp-transportadora">
+              <option value=""></option>
+              <option>Coordinadora</option><option>Interrapidisimo</option>
+              <option>Servientrega</option><option>Domicilio</option>
+              <option>Tienda física</option><option>NA</option>
+            </select>
+          </div>
+          <div class="form-group"><label># Guía</label><input type="text" id="mp-guia"></div>
+          <div class="form-group" style="grid-column:1/-1"><label>Novedades</label><input type="text" id="mp-novedades"></div>
+          <div class="form-group"><label>Estado novedad</label><input type="text" id="mp-estado-novedad"></div>
+          <div class="form-group"><label>F. Devolución</label><input type="date" id="mp-devolucion"></div>
+          <div class="form-group"><label>F. Entregado</label><input type="date" id="mp-entregado"></div>
+          <div class="form-group"><label>F. Pagado</label><input type="date" id="mp-pagado"></div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px;justify-content:flex-end;border-top:1px solid var(--border);padding-top:12px;">
       <button class="btn btn-secondary" onclick="cerrarModalPedido()">Cancelar</button>
-      <button class="btn btn-primary" onclick="guardarPedido()">💾 Guardar</button>
+      <button class="btn btn-primary" onclick="guardarPedido()">💾 Guardar pedido</button>
     </div>
   </div>
 </div>
@@ -1740,47 +1780,80 @@ async function renderPedidos(){
 }
 
 function filtrarPedidos(){
-  const buscar = document.getElementById('filtro-pedido-buscar').value.toLowerCase();
-  const estado = document.getElementById('filtro-pedido-estado').value;
-  const desde = document.getElementById('filtro-pedido-desde').value;
-  const hasta = document.getElementById('filtro-pedido-hasta').value;
+  const buscar = (document.getElementById('fp-buscar')||document.getElementById('filtro-pedido-buscar'))?.value.toLowerCase()||'';
+  const tienda = document.getElementById('fp-tienda')?.value||'';
+  const estado = (document.getElementById('fp-estado')||document.getElementById('filtro-pedido-estado'))?.value||'';
+  const desde = (document.getElementById('fp-desde')||document.getElementById('filtro-pedido-desde'))?.value||'';
+  const hasta = (document.getElementById('fp-hasta')||document.getElementById('filtro-pedido-hasta'))?.value||'';
 
   let lista = cachedPedidos.filter(p => {
+    if(tienda && (p.tienda||'') !== tienda) return false;
     if(estado && p.estado !== estado) return false;
-    if(desde && p.fecha < desde) return false;
-    if(hasta && p.fecha > hasta) return false;
+    if(desde && (p.fecha||'') < desde) return false;
+    if(hasta && (p.fecha||'') > hasta) return false;
     if(buscar){
-      const txt = `${p.nombre_cliente||''} ${p.num_pedido||''} ${p.num_guia||''} ${p.ciudad||''} ${p.referencia||''}`.toLowerCase();
+      const txt = `${p.nombre_cliente||''} ${p.num_pedido||''} ${p.num_guia||''} ${p.ciudad||''} ${p.referencia||''} ${p.cedula||''}`.toLowerCase();
       if(!txt.includes(buscar)) return false;
     }
     return true;
   });
 
-  document.getElementById('pedidos-count').textContent = `${lista.length} pedidos`;
+  const countEl = document.getElementById('pedidos-count');
+  if(countEl) countEl.textContent = `${lista.length} pedidos`;
   const tbody = document.getElementById('tbody-pedidos');
   const empty = document.getElementById('no-pedidos');
-
-  if(!lista.length){tbody.innerHTML='';empty.style.display='block';return;}
-  empty.style.display='none';
+  if(!lista.length){tbody.innerHTML='';if(empty)empty.style.display='block';return;}
+  if(empty)empty.style.display='none';
 
   const fmt = n => n ? new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',minimumFractionDigits:0}).format(n) : '—';
-  const estClass = e => 'est-'+(e||'Pendiente').replace(/ /g,'-');
+  const fmtDate = d => d ? d.substring(5).replace('-','/') : '—'; // MM/DD
 
-  tbody.innerHTML = lista.map(p => `
-    <tr>
-      <td><strong>${p.num_pedido||'—'}</strong><br><span style="font-size:10px;color:var(--text2)">${p.shopify_order_number||''}</span></td>
-      <td>${p.fecha||'—'}</td>
-      <td>${p.nombre_cliente||'—'}</td>
-      <td style="color:var(--text2)">${p.ciudad||'—'}</td>
+  const estBadge = e => {
+    const map = {
+      'Pendiente':'est-p','Confirmado':'est-c','En produccion':'est-pr',
+      'Despachado':'est-d','Entregado':'est-e','Pagado':'est-pg',
+      'Anulado':'est-an','Devuelto':'est-dv'
+    };
+    return `<span class="${map[e]||'est-p'}">${e||'Pendiente'}</span>`;
+  };
+
+  const tiendaKey = t => (t||'').replace(' ','').toUpperCase().replace('MANYCHAT','MANY');
+
+  tbody.innerHTML = lista.map(p => {
+    const rowClass = p.estado==='Pagado'?'row-pagado':p.estado==='Anulado'?'row-anulado':p.estado==='Devuelto'?'row-devuelto':'';
+    const saldo = (p.valor_venta||0) - (p.abono_1||0) - (p.abono_2||0);
+    const saldoClass = saldo<=0?'saldo-cero':'saldo-pendiente';
+    const tk = tiendaKey(p.tienda||'VIRTUAL');
+    return `<tr class="${rowClass}">
+      <td>${fmtDate(p.fecha)}</td>
+      <td><span class="tienda-badge tienda-${tk}">${p.tienda||'VIRTUAL'}</span></td>
+      <td><strong>${p.num_pedido||'—'}</strong></td>
+      <td style="color:var(--text2)">${p.asignado||'—'}</td>
+      <td style="color:var(--text2);font-size:11px">${p.confirmado||'—'}</td>
+      <td style="font-size:11px">${p.num_vale||'—'}</td>
+      <td style="font-size:11px">${p.remision||'—'}</td>
       <td>${p.referencia||'—'}</td>
-      <td style="text-align:center">${p.talla||'—'}</td>
-      <td>${fmt(p.valor_venta)}</td>
+      <td style="font-size:11px">${p.color||'—'}</td>
+      <td style="text-align:center;font-weight:700">${p.talla||'—'}</td>
+      <td><strong>${p.nombre_cliente||'—'}</strong></td>
+      <td style="font-size:11px;color:var(--text2)">${p.cedula||'—'}</td>
+      <td style="font-size:11px">${p.ciudad||'—'}</td>
+      <td style="font-size:11px;color:var(--text2)">${p.telefono_1||'—'}</td>
+      <td style="text-align:right">${fmt(p.valor_venta)}</td>
+      <td style="text-align:right;color:var(--text2)">${p.abono_1?fmt(p.abono_1):'—'}</td>
+      <td style="text-align:right;color:var(--text2)">${p.abono_2?fmt(p.abono_2):'—'}</td>
+      <td style="text-align:right" class="${saldoClass}">${fmt(saldo)}</td>
       <td style="font-size:11px">${p.forma_pago||'—'}</td>
-      <td><span class="pedido-estado ${estClass(p.estado)}">${p.estado||'Pendiente'}</span></td>
-      <td style="font-size:11px">${p.num_guia||'—'}</td>
-      <td style="font-size:11px;color:var(--text2)">${p.asignado||'—'}</td>
+      <td style="font-size:11px">${fmtDate(p.fecha_despacho)}</td>
+      <td style="font-size:11px">${p.transportadora||'—'}</td>
+      <td style="font-size:11px;font-weight:600">${p.num_guia||'—'}</td>
+      <td style="font-size:11px;color:var(--danger)">${p.novedades||'—'}</td>
+      <td>${estBadge(p.estado)}</td>
+      <td style="font-size:11px">${fmtDate(p.entregado)}</td>
+      <td style="font-size:11px">${fmtDate(p.pagado)}</td>
       <td><button class="btn btn-secondary btn-sm" onclick="abrirModalPedido('${p.id}')">✏️</button></td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 }
 
 function calcularSaldoPedido(){
@@ -1794,19 +1867,19 @@ function abrirModalPedido(id){
   const p = id ? cachedPedidos.find(x=>x.id===id) : null;
   document.getElementById('mp-titulo').textContent = p ? `Pedido ${p.num_pedido||''}` : 'Nuevo pedido';
   document.getElementById('mp-id').value = p?.id || '';
-  document.getElementById('mp-estado').value = p?.estado || 'Pendiente';
-  document.getElementById('mp-num-pedido').value = p?.num_pedido || '';
   document.getElementById('mp-fecha').value = p?.fecha || todayISO();
+  document.getElementById('mp-tienda').value = p?.tienda || 'VIRTUAL';
+  document.getElementById('mp-num-pedido').value = p?.num_pedido || '';
+  document.getElementById('mp-asignado').value = p?.asignado || '';
   document.getElementById('mp-confirmado').value = p?.confirmado || '';
   document.getElementById('mp-fecha-compromiso').value = p?.fecha_compromiso || '';
-  document.getElementById('mp-asignado').value = p?.asignado || '';
   document.getElementById('mp-observaciones').value = p?.observaciones || '';
-  document.getElementById('mp-referencia').value = p?.referencia || '';
-  document.getElementById('mp-color').value = p?.color || '';
-  document.getElementById('mp-talla').value = p?.talla || '';
   document.getElementById('mp-proceso').value = p?.proceso_produccion || '';
   document.getElementById('mp-vale').value = p?.num_vale || '';
   document.getElementById('mp-remision').value = p?.remision || '';
+  document.getElementById('mp-referencia').value = p?.referencia || '';
+  document.getElementById('mp-color').value = p?.color || '';
+  document.getElementById('mp-talla').value = p?.talla || '';
   document.getElementById('mp-nombre-cliente').value = p?.nombre_cliente || '';
   document.getElementById('mp-cedula').value = p?.cedula || '';
   document.getElementById('mp-ciudad').value = p?.ciudad || '';
@@ -1818,6 +1891,7 @@ function abrirModalPedido(id){
   document.getElementById('mp-abono2').value = p?.abono_2 || '';
   document.getElementById('mp-saldo').value = p?.saldo || '';
   document.getElementById('mp-forma-pago').value = p?.forma_pago || 'Pago en casa';
+  document.getElementById('mp-estado').value = p?.estado || 'Pendiente';
   document.getElementById('mp-fecha-despacho').value = p?.fecha_despacho || '';
   document.getElementById('mp-transportadora').value = p?.transportadora || '';
   document.getElementById('mp-guia').value = p?.num_guia || '';
@@ -1845,6 +1919,7 @@ async function guardarPedido(){
 
   const data = {
     estado,
+    tienda: document.getElementById('mp-tienda').value,
     num_pedido: document.getElementById('mp-num-pedido').value,
     fecha: document.getElementById('mp-fecha').value || null,
     confirmado: document.getElementById('mp-confirmado').value,
@@ -2024,10 +2099,26 @@ async function importarCSVShopify(input){
     const LOTE = 50;
     for(let i=0; i<pedidos.length; i+=LOTE){
       const lote = pedidos.slice(i, i+LOTE);
+      // Limpiar fechas vacías o inválidas
+      lote.forEach(p => {
+        if(!p.fecha || !/^\d{4}-\d{2}-\d{2}$/.test(p.fecha)) p.fecha = null;
+        if(!p.fecha_despacho || !/^\d{4}-\d{2}-\d{2}$/.test(p.fecha_despacho)) delete p.fecha_despacho;
+        if(p.valor_venta === null || isNaN(p.valor_venta)) p.valor_venta = 0;
+      });
       const {error} = await db.from('pedidos_virtual')
         .upsert(lote, {onConflict: 'shopify_order_id'});
-      if(error) throw error;
-      insertados += lote.length;
+      if(error) {
+        console.error('Error lote', i, error.message);
+        // Intentar uno por uno
+        for(const p of lote){
+          try{
+            await db.from('pedidos_virtual').upsert([p], {onConflict: 'shopify_order_id'});
+            insertados++;
+          }catch(e2){ console.error('Saltando pedido:', p.num_pedido, e2.message); }
+        }
+      } else {
+        insertados += lote.length;
+      }
       info.textContent = `⏳ Importando... ${insertados}/${pedidos.length}`;
     }
 
