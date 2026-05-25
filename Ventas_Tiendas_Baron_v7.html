@@ -1995,7 +1995,7 @@ async function importarCSVShopify(input){
 
       const estado = financialStatus === 'paid' ? 'Pagado' : 'Pendiente';
       const total = parseFloat(cols[idx['Total']] || '0');
-      const shopifyId = cols[idx['Id']] || numPedido;
+      const shopifyId = (cols[idx['Id']] || '').trim() || numPedido.replace('#','');
 
       pedidos.push({
         shopify_order_id: String(shopifyId),
