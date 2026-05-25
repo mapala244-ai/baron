@@ -580,6 +580,10 @@ tr.fila-anulado:hover td{background:#fceaea !important;}
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
       <button class="btn-sync" onclick="sincronizarShopify()">🔄 Sincronizar Shopify</button>
       <span style="font-size:11px;color:var(--text2)" id="sync-shopify-info"></span>
+      <label class="btn-sync" style="background:var(--success);cursor:pointer;">
+        📂 Importar CSV
+        <input type="file" id="input-csv-shopify" accept=".csv" style="display:none" onchange="importarCSVShopify(this)">
+      </label>
       <button class="btn btn-primary" onclick="abrirModalPedido(null)">+ Pedido manual</button>
     </div>
   </div>
@@ -1922,6 +1926,141 @@ async function registrarEnVentas(pedidoId, data){
   }
 }
 // ── FIN PEDIDOS ───────────────────────────────────────────────
+
+// ── IMPORTAR CSV SHOPIFY ─────────────────────────────────────
+async function importarCSVShopify(input){
+  const file = input.files[0];
+  if(!file) return;
+  const info = document.getElementById('sync-shopify-info');
+  info.textContent = '⏳ Procesando CSV...';
+  showLoading('Importando pedidos del CSV...');
+
+  try{
+    const text = await file.text();
+    const lineas = text.split('\n');
+    const headers = parsearCSVLinea(lineas[0]);
+
+    // Índices de columnas
+    const idx = {};
+    headers.forEach((h,i) => idx[h.trim()] = i);
+
+    const pedidos = [];
+    const procesados = new Set();
+
+    for(let i=1; i<lineas.length; i++){
+      if(!lineas[i].trim()) continue;
+      const cols = parsearCSVLinea(lineas[i]);
+      const numPedido = cols[idx['Name']] || '';
+      if(!numPedido || procesados.has(numPedido)) continue;
+      procesados.add(numPedido);
+
+      const financialStatus = cols[idx['Financial Status']] || '';
+      const cancelledAt = cols[idx['Cancelled at']] || '';
+      if(cancelledAt) continue; // Saltar cancelados
+
+      const lineitemName = cols[idx['Lineitem name']] || '';
+      // Extraer talla del nombre del producto
+      const tallaMatch = lineitemName.match(/\b(3[5-9]|4[01])\b/);
+      const talla = tallaMatch ? tallaMatch[1] : '';
+      // Extraer color (después del último /)
+      const partes = lineitemName.split('/');
+      const color = partes.length > 1 ? partes[partes.length-1].trim() : '';
+      // Referencia (antes del primer -)
+      const refPartes = lineitemName.split(' - ');
+      const referencia = refPartes[0].trim();
+
+      // Cédula desde Note Attributes
+      let cedula = '';
+      const noteAttrs = cols[idx['Note Attributes']] || '';
+      const cedMatch = noteAttrs.match(/[cC][eé]dula[:\s]+([0-9.]+)/);
+      if(cedMatch) cedula = cedMatch[1];
+      const notes = cols[idx['Notes']] || '';
+      if(!cedula){
+        const cedMatch2 = notes.match(/[cC][eé]dula[:\s]+([0-9.]+)/);
+        if(cedMatch2) cedula = cedMatch2[1];
+      }
+      // Billing Company suele tener la cédula
+      const billingCompany = cols[idx['Billing Company']] || '';
+      if(!cedula && /^[0-9.]+$/.test(billingCompany.trim())) cedula = billingCompany.trim();
+
+      const createdAt = cols[idx['Created at']] || '';
+      const fecha = createdAt.split(' ')[0] || '';
+
+      const paymentMethod = cols[idx['Payment Method']] || '';
+      let formaPago = 'Pago en casa';
+      if(paymentMethod.toLowerCase().includes('addi')) formaPago = 'Addi';
+      else if(paymentMethod.toLowerCase().includes('wompi')) formaPago = 'Wompi';
+      else if(paymentMethod.toLowerCase().includes('sistecredito')) formaPago = 'Sistecredito';
+      else if(financialStatus === 'paid') formaPago = 'Pagado online';
+
+      const estado = financialStatus === 'paid' ? 'Pagado' : 'Pendiente';
+      const total = parseFloat(cols[idx['Total']] || '0');
+      const shopifyId = cols[idx['Id']] || numPedido;
+
+      pedidos.push({
+        shopify_order_id: String(shopifyId),
+        shopify_order_number: numPedido,
+        num_pedido: numPedido,
+        fecha: fecha,
+        nombre_cliente: (cols[idx['Shipping Name']] || cols[idx['Billing Name']] || '').trim(),
+        cedula: cedula,
+        ciudad: cols[idx['Shipping City']] || '',
+        direccion: cols[idx['Shipping Address1']] || '',
+        telefono_1: cols[idx['Shipping Phone']] || cols[idx['Billing Phone']] || '',
+        referencia: referencia,
+        color: color,
+        talla: talla,
+        valor_venta: total,
+        forma_pago: formaPago,
+        estado: estado,
+        observaciones: notes
+      });
+    }
+
+    // Insertar en lotes de 50
+    let insertados = 0;
+    const LOTE = 50;
+    for(let i=0; i<pedidos.length; i+=LOTE){
+      const lote = pedidos.slice(i, i+LOTE);
+      const {error} = await db.from('pedidos_virtual')
+        .upsert(lote, {onConflict: 'shopify_order_id'});
+      if(error) throw error;
+      insertados += lote.length;
+      info.textContent = `⏳ Importando... ${insertados}/${pedidos.length}`;
+    }
+
+    info.textContent = `✅ ${insertados} pedidos importados`;
+    toast(`✅ ${insertados} pedidos importados correctamente`,'success');
+    await renderPedidos();
+  }catch(e){
+    info.textContent = '❌ Error';
+    toast('Error importando: '+e.message,'danger');
+  }finally{
+    hideLoading();
+    input.value = '';
+  }
+}
+
+function parsearCSVLinea(linea){
+  const resultado = [];
+  let campo = '';
+  let dentroComillas = false;
+  for(let i=0; i<linea.length; i++){
+    const c = linea[i];
+    if(c==='"'){
+      if(dentroComillas && linea[i+1]==='"'){campo+='"';i++;}
+      else dentroComillas = !dentroComillas;
+    } else if(c===',' && !dentroComillas){
+      resultado.push(campo);
+      campo='';
+    } else {
+      campo+=c;
+    }
+  }
+  resultado.push(campo);
+  return resultado;
+}
+// ── FIN IMPORTAR CSV ──────────────────────────────────────────
 
 // INIT: manejado por el módulo de autenticación (window.load arriba)
 </script>
