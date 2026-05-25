@@ -586,15 +586,11 @@ tr.fila-anulado:hover td{background:#fceaea !important;}
     .filtros-pedidos input,.filtros-pedidos select{padding:5px 9px;border:1px solid var(--border2);border-radius:var(--radius-sm);background:var(--bg2);color:var(--text);font-size:12px;}
   </style>
   <div class="sec-hdr">
-    <div class="sec-title">📦 Control de Pedidos y Despachos</div>
+    <div class="sec-title">🛍️ Pedidos — Tienda Virtual</div>
     <button class="btn btn-primary" onclick="abrirModalPedido(null)">+ Nuevo pedido</button>
   </div>
   <div class="filtros-pedidos">
     <input type="text" id="fp-buscar" placeholder="🔍 Cliente, # pedido, guía, referencia..." oninput="filtrarPedidos()" style="min-width:230px">
-    <select id="fp-tienda" onchange="filtrarPedidos()">
-      <option value="">Todas las tiendas</option>
-      <option>VIRTUAL</option><option>LB</option><option>MB</option><option>MANY CHAT</option>
-    </select>
     <select id="fp-estado" onchange="filtrarPedidos()">
       <option value="">Todos los estados</option>
       <option>Pendiente</option><option>Confirmado</option><option>En produccion</option>
@@ -608,7 +604,7 @@ tr.fila-anulado:hover td{background:#fceaea !important;}
   <div style="overflow-x:auto">
     <table id="tabla-pedidos">
       <thead><tr>
-        <th>Fecha</th><th>Tienda</th><th># Pedido</th><th>Asignado</th>
+        <th>Fecha</th><th># Pedido</th><th>Asignado</th>
         <th>Confirmado</th><th>Vale</th><th>Remisión</th>
         <th>Referencia</th><th>Color</th><th>Talla</th>
         <th>Cliente</th><th>Cédula</th><th>Ciudad</th><th>Teléfono</th>
@@ -637,10 +633,8 @@ tr.fila-anulado:hover td{background:#fceaea !important;}
       <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;margin-bottom:8px;">📋 Identificación del pedido</div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
         <div class="form-group"><label>Fecha *</label><input type="date" id="mp-fecha"></div>
-        <div class="form-group"><label>Tienda</label>
-          <select id="mp-tienda">
-            <option>VIRTUAL</option><option>LB</option><option>MB</option><option>MANY CHAT</option>
-          </select>
+        <div class="form-group" style="display:none"><label>Tienda</label>
+          <select id="mp-tienda"><option value="VIRTUAL">VIRTUAL</option></select>
         </div>
         <div class="form-group"><label># Pedido</label><input type="text" id="mp-num-pedido" placeholder="TB 1234"></div>
         <div class="form-group"><label>Asignado a</label>
@@ -1787,7 +1781,6 @@ function filtrarPedidos(){
   const hasta = (document.getElementById('fp-hasta')||document.getElementById('filtro-pedido-hasta'))?.value||'';
 
   let lista = cachedPedidos.filter(p => {
-    if(tienda && (p.tienda||'') !== tienda) return false;
     if(estado && p.estado !== estado) return false;
     if(desde && (p.fecha||'') < desde) return false;
     if(hasta && (p.fecha||'') > hasta) return false;
@@ -1826,7 +1819,6 @@ function filtrarPedidos(){
     const tk = tiendaKey(p.tienda||'VIRTUAL');
     return `<tr class="${rowClass}">
       <td>${fmtDate(p.fecha)}</td>
-      <td><span class="tienda-badge tienda-${tk}">${p.tienda||'VIRTUAL'}</span></td>
       <td><strong>${p.num_pedido||'—'}</strong></td>
       <td style="color:var(--text2)">${p.asignado||'—'}</td>
       <td style="color:var(--text2);font-size:11px">${p.confirmado||'—'}</td>
