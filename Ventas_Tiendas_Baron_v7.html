@@ -1984,7 +1984,9 @@ async function importarCSVShopify(input){
       if(!cedula && /^[0-9.]+$/.test(billingCompany.trim())) cedula = billingCompany.trim();
 
       const createdAt = cols[idx['Created at']] || '';
-      const fecha = createdAt.split(' ')[0] || '';
+      let fecha = createdAt.split(' ')[0] || '';
+      // Validar formato de fecha
+      if(!fecha || !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) fecha = todayISO();
 
       const paymentMethod = cols[idx['Payment Method']] || '';
       let formaPago = 'Pago en casa';
