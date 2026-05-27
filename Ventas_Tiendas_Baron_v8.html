@@ -1408,7 +1408,7 @@ function exportExcel() {
   if (isVentas) {
     csv = 'Fecha,Mes,Tipo Producto,Medio Pago,Monto,# Pedido,Devolucion,Fecha pago,Valor pagado,Shopify,Notas\n';
     data.forEach(r => {
-      csv += [r.fecha,r.mes,r.tipo_producto,r.medio_pago,r.monto,r.num_pedido,r.devolucion,r.fecha_pago,r.valor_pagado,r.shopify,r.notas].map(v => `"${v||""}"`).join(",") + "\n";
+      csv += [r.fecha,r.mes,r.tipo_producto,r.medio_pago,r.monto,r.num_pedido,r.devolucion,r.fecha_pago,r.valor_pagado,r.shopify,r.notas].map(v => '"' + (v||'') + '"').join(',') + '\n';
     });
   } else {
     csv = 'Fecha,Tienda,# Pedido,Confirmado,Compromiso,Proceso,Vale,Remision,Referencia,Color,Talla,Cliente,Ciudad,Valor,Abono1,Abono2,Saldo,FormaPago,FDespacho,Transportadora,Guia,CobroGuia,Estado,Entregado,Pagado,Novedades\n';
