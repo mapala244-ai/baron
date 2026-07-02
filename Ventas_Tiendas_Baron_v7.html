@@ -399,7 +399,8 @@ tr.fila-anulado:hover td{background:#fceaea !important;}
         <select id="v-transportadora">
           <option value="">Sin envío</option>
           <option>Envia</option><option>Servientrega</option><option>Coordinadora</option>
-          <option>Deprisa</option><option>TCC</option><option>Interrapidisimo</option><option>Otra</option>
+          <option>Deprisa</option><option>TCC</option><option>Interrapidisimo</option>
+          <option>Domicilio</option><option>Otra</option>
         </select>
       </div>
       <!-- Número de guía — Redes + Virtual -->
@@ -1318,17 +1319,17 @@ const IMPORT_HEADER_MAP={
   fecha:['fecha'],
   mes:['mes'],
   canal:['canal'],
-  tipo_producto:['producto','tipo_producto','tipo de producto'],
+  tipo_producto:['producto','tipo_producto','tipo de producto','tipo producto'],
   medio_pago:['medio pago','medio_pago','medio'],
   monto:['monto','valor','total'],
   cliente:['cliente','nombre cliente','nombre'],
-  transportadora:['transportadora'],
-  fecha_envio:['despacho','fecha envio','fecha_envio','fecha de envio','f envio'],
+  transportadora:['transportadora','trasportadora'],
+  fecha_envio:['despacho','fecha envio','fecha_envio','fecha de envio','f envio','enviado'],
   num_pedido:['# pedido','num_pedido','pedido','numero pedido','# de pedido'],
   fecha_pedido:['f. pedido','f pedido','fecha pedido','fecha_pedido'],
   num_guia:['# guia','guia','num_guia','numero guia','# de guia'],
   fecha_pago:['f. pago','f pago','fecha pago','fecha_pago'],
-  novedad:['novedad'],
+  novedad:['novedad','devolucion','motivo devolucion'],
   notas:['notas','observaciones','nota'],
 };
 function _normHeader(h){
@@ -1370,6 +1371,44 @@ function _parseMonto(v){
 }
 
 let _importPendingRows=[];
+let _importPendingGasto=null;
+
+const MESES_LISTA=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+function _mesFromFilename(filename){
+  const f=_normHeader(filename);
+  const found=MESES_LISTA.find(m=>f.includes(m));
+  return found?found.charAt(0).toUpperCase()+found.slice(1):'';
+}
+function _lastDayOfMonthISO(mesTxt,year){
+  const idx=MESES_LISTA.indexOf(_normHeader(mesTxt));
+  if(idx<0)return null;
+  const d=new Date(year,idx+1,0); // día 0 del mes siguiente = último día del mes
+  return d.toISOString().split('T')[0];
+}
+// Detecta si una hoja es "resumen mensual" (sin filas de ventas individuales, solo totales)
+function _parseResumenSheet(matrix){
+  let totalVentas=null,totalGastos=null,mesTxt=null;
+  matrix.forEach(row=>{
+    row.forEach((cell,idx)=>{
+      if(typeof cell==='string'&&cell.trim()){
+        const c=_normHeader(cell);
+        if(c.includes('venta')&&totalVentas===null){
+          const val=row.slice(idx+1).find(v=>typeof v==='number');
+          if(val!=null)totalVentas=val;
+        }
+        if(c.includes('gasto')&&totalGastos===null){
+          const val=row.slice(idx+1).find(v=>typeof v==='number');
+          if(val!=null)totalGastos=val;
+        }
+        if(c==='mes'&&!mesTxt){
+          const val=row.slice(idx+1).find(v=>typeof v==='string'&&v.trim());
+          if(val)mesTxt=val.trim();
+        }
+      }
+    });
+  });
+  return {totalVentas,totalGastos,mesTxt};
+}
 
 async function handleImportVentas(event){
   const file=event.target.files[0];
@@ -1380,6 +1419,45 @@ async function handleImportVentas(event){
     const buf=await file.arrayBuffer();
     const wb=XLSX.read(buf,{type:'array',cellDates:true});
     const sheet=wb.Sheets[wb.SheetNames[0]];
+    const matrix=XLSX.utils.sheet_to_json(sheet,{header:1,defval:''});
+    if(!matrix.length){toast('El archivo no tiene filas de datos','danger');hideLoading();return;}
+
+    // ¿Tiene columna "Fecha"? -> archivo con ventas detalladas
+    const headerRow=(matrix.find(r=>r.some(c=>_normHeader(c)==='fecha'))||[]).map(_normHeader);
+    const tieneFecha=headerRow.includes('fecha');
+
+    if(!tieneFecha){
+      // ── Archivo de RESUMEN MENSUAL (solo totales, ej. tiendas físicas) ──
+      const {totalVentas,totalGastos,mesTxt}=_parseResumenSheet(matrix);
+      const canal=_detectCanalFromFilename(file.name);
+      const mes=mesTxt||_mesFromFilename(file.name);
+      const year=new Date().getFullYear();
+      const fecha=_lastDayOfMonthISO(mes,year);
+      hideLoading();
+      if(!canal||!mes||!fecha||(totalVentas==null&&totalGastos==null)){
+        toast('No se pudo interpretar el archivo de resumen (revisa canal, mes y totales)','danger');
+        return;
+      }
+      _importPendingRows=totalVentas!=null?[{
+        fecha, mes, canal,
+        tipo_producto:'Consolidado mensual',
+        medio_pago:'Varios',
+        monto:totalVentas,
+        cliente:null,transportadora:null,fecha_envio:null,num_pedido:null,
+        fecha_pedido:null,num_guia:null,fecha_pago:null,novedad:null,
+        notas:'Importado como total mensual (sin detalle por venta)',
+      }]:[];
+      _importPendingGasto=totalGastos!=null?{fecha,mes,canal,tipo_gasto:'Gastos operativos del mes',monto:totalGastos}:null;
+      const msg=`Archivo de resumen detectado (${canal} - ${mes}).\n\n`+
+        (totalVentas!=null?`Ventas del mes: $${totalVentas.toLocaleString('es-CO')}\n`:'')+
+        (totalGastos!=null?`Gastos del mes: $${totalGastos.toLocaleString('es-CO')}\n`:'')+
+        `\nSe creará 1 registro de venta consolidada y 1 de gasto. ¿Confirmas la importación?`;
+      if(confirm(msg)){ await _insertImportedVentas(); }
+      else{ _importPendingRows=[];_importPendingGasto=null;toast('Importación cancelada'); }
+      return;
+    }
+
+    // ── Archivo con ventas detalladas (fila por venta) ──
     const raw=XLSX.utils.sheet_to_json(sheet,{defval:''});
     if(!raw.length){toast('El archivo no tiene filas de datos','danger');hideLoading();return;}
 
@@ -1440,24 +1518,31 @@ async function handleImportVentas(event){
 
 async function _insertImportedVentas(){
   const rows=_importPendingRows;
-  if(!rows.length)return;
-  showLoading(`Importando ${rows.length} ventas...`);
+  const gasto=_importPendingGasto;
+  if(!rows.length&&!gasto)return;
+  showLoading(`Importando datos...`);
   try{
-    const CHUNK=300;
     let insertadas=0;
-    for(let i=0;i<rows.length;i+=CHUNK){
-      const lote=rows.slice(i,i+CHUNK);
-      const{error}=await db.from('ventas_mb').insert(lote);
-      if(error)throw error;
-      insertadas+=lote.length;
+    if(rows.length){
+      const CHUNK=300;
+      for(let i=0;i<rows.length;i+=CHUNK){
+        const lote=rows.slice(i,i+CHUNK);
+        const{error}=await db.from('ventas_mb').insert(lote);
+        if(error)throw error;
+        insertadas+=lote.length;
+      }
     }
-    toast(`✅ ${insertadas} ventas importadas correctamente`,'success');
-    cachedVentas=[];
+    if(gasto){
+      const{error}=await db.from('gastos_mb').insert(gasto);
+      if(error)throw error;
+    }
+    toast(`✅ Importación completa: ${insertadas} venta(s)${gasto?' + 1 gasto':''}`,'success');
+    cachedVentas=[];cachedGastos=[];
     await renderVentas();
   }catch(e){
     toast('Error al importar: '+e.message,'danger');
   }finally{
-    _importPendingRows=[];
+    _importPendingRows=[];_importPendingGasto=null;
     hideLoading();
   }
 }
