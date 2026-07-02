@@ -222,6 +222,8 @@ tr.fila-anulado:hover td{background:#fceaea !important;}
   <div class="sec-hdr">
     <div class="sec-title">Registro de ventas</div>
     <div class="btn-group">
+      <input type="file" id="import-ventas-input" accept=".xlsx,.xls" style="display:none" onchange="handleImportVentas(event)">
+      <button class="btn btn-secondary btn-sm" onclick="document.getElementById('import-ventas-input').click()">📤 Importar Excel</button>
       <button class="btn btn-secondary btn-sm" onclick="exportVentasExcel()">⬇ Excel</button>
       <button class="btn btn-secondary btn-sm" onclick="exportVentasPDF()">⬇ PDF</button>
       <button class="btn btn-primary" onclick="openVentaModal()">+ Nueva venta</button>
@@ -797,9 +799,9 @@ async function doLogin(){
 async function doLogout(){
   await db.auth.signOut();
   currentUser=null;currentProfile=null;myPermissions=[];
-  document.getElementById('login-screen').style.display='flex';
   document.querySelector('nav.navbar').style.display='none';
   document.querySelectorAll('.page').forEach(p=>p.style.display='none');
+  await autoLogin();
 }
 
 async function _cargarSesion(session){
@@ -831,11 +833,24 @@ async function _cargarSesion(session){
   document.querySelectorAll('.nav-tab')[0].classList.add('active');
 }
 
+// Auto-login en segundo plano (sin pantalla de login) — TEMPORAL
+const AUTO_EMAIL='barontiendas@gmail.com';
+const AUTO_PASS='Pachis20202020@';
+async function autoLogin(){
+  document.getElementById('login-screen').style.display='none';
+  const {data,error}=await db.auth.signInWithPassword({email:AUTO_EMAIL,password:AUTO_PASS});
+  if(error){
+    console.error('Auto-login falló:',error.message);
+    return;
+  }
+  await _cargarSesion(data.session);
+}
+
 // Verificar sesión al cargar
 window.addEventListener('load', async ()=>{
   const {data:{session}}=await db.auth.getSession();
   if(session){ await _cargarSesion(session); }
-  else { document.getElementById('login-screen').style.display='flex'; }
+  else { await autoLogin(); }
 });
 // ── FIN AUTH ─────────────────────────────────────────────────
 
@@ -1296,6 +1311,157 @@ async function deleteGasto(id){
     if(error)throw error;toast('Gasto eliminado');cachedGastos=[];await renderGastos();
   }catch(e){toast('Error','danger');}finally{hideLoading();}
 }
+
+// IMPORTAR EXCEL POR MES ────────────────────────────────────
+// Encabezados aceptados (sin tildes, minúsculas) por cada campo de ventas_mb
+const IMPORT_HEADER_MAP={
+  fecha:['fecha'],
+  mes:['mes'],
+  canal:['canal'],
+  tipo_producto:['producto','tipo_producto','tipo de producto'],
+  medio_pago:['medio pago','medio_pago','medio'],
+  monto:['monto','valor','total'],
+  cliente:['cliente','nombre cliente','nombre'],
+  transportadora:['transportadora'],
+  fecha_envio:['despacho','fecha envio','fecha_envio','fecha de envio','f envio'],
+  num_pedido:['# pedido','num_pedido','pedido','numero pedido','# de pedido'],
+  fecha_pedido:['f. pedido','f pedido','fecha pedido','fecha_pedido'],
+  num_guia:['# guia','guia','num_guia','numero guia','# de guia'],
+  fecha_pago:['f. pago','f pago','fecha pago','fecha_pago'],
+  novedad:['novedad'],
+  notas:['notas','observaciones','nota'],
+};
+function _normHeader(h){
+  return String(h||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+}
+function _detectCanalFromFilename(filename){
+  const f=_normHeader(filename);
+  if(f.includes('lenny')&&f.includes('redes'))return 'Lenny Baron Redes';
+  if(f.includes('maria')&&f.includes('redes'))return 'Maria Baron Redes';
+  if(f.includes('milena'))return 'Milena Baron Redes';
+  if(f.includes('virtual'))return 'Tienda Virtual';
+  if(f.includes('lenny'))return 'Lenny Baron';
+  if(f.includes('maria'))return 'Maria Baron';
+  return '';
+}
+function _excelDateToISO(v){
+  if(v==null||v==='')return null;
+  if(v instanceof Date && !isNaN(v))return v.toISOString().split('T')[0];
+  if(typeof v==='number'){
+    // Serial de Excel
+    const d=XLSX.SSF.parse_date_code(v);
+    if(d)return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+    return null;
+  }
+  const s=String(v).trim();
+  if(!s)return null;
+  // yyyy-mm-dd
+  if(/^\d{4}-\d{2}-\d{2}/.test(s))return s.slice(0,10);
+  // dd/mm/yyyy o dd-mm-yyyy
+  const m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if(m)return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  return null;
+}
+function _parseMonto(v){
+  if(typeof v==='number')return v;
+  if(!v)return 0;
+  const n=parseFloat(String(v).replace(/[^\d.,-]/g,'').replace(/\.(?=\d{3}(,|$))/g,'').replace(',','.'));
+  return isNaN(n)?0:n;
+}
+
+let _importPendingRows=[];
+
+async function handleImportVentas(event){
+  const file=event.target.files[0];
+  event.target.value='';
+  if(!file)return;
+  showLoading('Leyendo archivo...');
+  try{
+    const buf=await file.arrayBuffer();
+    const wb=XLSX.read(buf,{type:'array',cellDates:true});
+    const sheet=wb.Sheets[wb.SheetNames[0]];
+    const raw=XLSX.utils.sheet_to_json(sheet,{defval:''});
+    if(!raw.length){toast('El archivo no tiene filas de datos','danger');hideLoading();return;}
+
+    // Mapear encabezados de la primera fila a nuestros campos
+    const sampleKeys=Object.keys(raw[0]).map(k=>({orig:k,norm:_normHeader(k)}));
+    const fieldByHeader={};
+    Object.entries(IMPORT_HEADER_MAP).forEach(([field,variants])=>{
+      const found=sampleKeys.find(k=>variants.includes(k.norm));
+      if(found)fieldByHeader[field]=found.orig;
+    });
+
+    const canalArchivo=_detectCanalFromFilename(file.name);
+    const rows=[]; let omitidas=0;
+
+    raw.forEach(r=>{
+      const fechaRaw=fieldByHeader.fecha?r[fieldByHeader.fecha]:null;
+      const fecha=_excelDateToISO(fechaRaw);
+      const monto=_parseMonto(fieldByHeader.monto?r[fieldByHeader.monto]:0);
+      let canal=(fieldByHeader.canal?String(r[fieldByHeader.canal]||'').trim():'')||canalArchivo;
+      if(!fecha||!monto||!canal){omitidas++;return;}
+      const mes=(fieldByHeader.mes?String(r[fieldByHeader.mes]||'').trim():'')||mesFromDate(fecha);
+      rows.push({
+        fecha, mes, canal,
+        tipo_producto:fieldByHeader.tipo_producto?String(r[fieldByHeader.tipo_producto]||'').trim()||'Otro':'Otro',
+        medio_pago:fieldByHeader.medio_pago?String(r[fieldByHeader.medio_pago]||'').trim()||'Efectivo':'Efectivo',
+        monto,
+        cliente:fieldByHeader.cliente?String(r[fieldByHeader.cliente]||'').trim()||null:null,
+        transportadora:fieldByHeader.transportadora?String(r[fieldByHeader.transportadora]||'').trim()||null:null,
+        fecha_envio:fieldByHeader.fecha_envio?_excelDateToISO(r[fieldByHeader.fecha_envio]):null,
+        num_pedido:fieldByHeader.num_pedido?String(r[fieldByHeader.num_pedido]||'').trim()||null:null,
+        fecha_pedido:fieldByHeader.fecha_pedido?_excelDateToISO(r[fieldByHeader.fecha_pedido]):null,
+        num_guia:fieldByHeader.num_guia?String(r[fieldByHeader.num_guia]||'').trim()||null:null,
+        fecha_pago:fieldByHeader.fecha_pago?_excelDateToISO(r[fieldByHeader.fecha_pago]):null,
+        novedad:fieldByHeader.novedad?String(r[fieldByHeader.novedad]||'').trim()||null:null,
+        notas:fieldByHeader.notas?String(r[fieldByHeader.notas]||'').trim()||null:null,
+      });
+    });
+
+    hideLoading();
+    if(!rows.length){toast('No se encontraron filas válidas (revisa columnas Fecha, Monto y Canal)','danger');return;}
+
+    _importPendingRows=rows;
+    const meses=[...new Set(rows.map(r=>r.mes))].join(', ');
+    const canales=[...new Set(rows.map(r=>r.canal))].join(', ');
+    const msg=`Se detectaron ${rows.length} ventas válidas`+(omitidas?` (se omitieron ${omitidas} filas sin fecha/monto/canal)`:'')+
+      `.\n\nMes(es): ${meses}\nCanal(es): ${canales}\n\n¿Confirmas la importación a la base de datos?`;
+    if(confirm(msg)){
+      await _insertImportedVentas();
+    }else{
+      _importPendingRows=[];
+      toast('Importación cancelada');
+    }
+  }catch(e){
+    hideLoading();
+    toast('Error leyendo el Excel: '+e.message,'danger');
+  }
+}
+
+async function _insertImportedVentas(){
+  const rows=_importPendingRows;
+  if(!rows.length)return;
+  showLoading(`Importando ${rows.length} ventas...`);
+  try{
+    const CHUNK=300;
+    let insertadas=0;
+    for(let i=0;i<rows.length;i+=CHUNK){
+      const lote=rows.slice(i,i+CHUNK);
+      const{error}=await db.from('ventas_mb').insert(lote);
+      if(error)throw error;
+      insertadas+=lote.length;
+    }
+    toast(`✅ ${insertadas} ventas importadas correctamente`,'success');
+    cachedVentas=[];
+    await renderVentas();
+  }catch(e){
+    toast('Error al importar: '+e.message,'danger');
+  }finally{
+    _importPendingRows=[];
+    hideLoading();
+  }
+}
+// FIN IMPORTAR EXCEL ─────────────────────────────────────────
 
 // EXPORTS
 async function exportVentasExcel(){
