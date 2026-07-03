@@ -929,7 +929,7 @@ async function renderDashboard(){
       <div class="metric-card"><div class="metric-label">Total ventas</div><div class="metric-value mv-accent">${fmt(totalVentas)}</div><div class="metric-sub">${numVentas} registros</div></div>
       <div class="metric-card"><div class="metric-label">Total gastos</div><div class="metric-value mv-red">${fmt(totalGastos)}</div></div>
       <div class="metric-card"><div class="metric-label">Utilidad</div><div class="metric-value ${utilidad>=0?'mv-green':'mv-red'}">${fmt(utilidad)}</div></div>
-      <div class="metric-card"><div class="metric-label">Canales activos</div><div class="metric-value mv-blue">${[...new Set(v.map(x=>x.canal))].length}</div></div>
+      <div class="metric-card"><div class="metric-label">Canales activos</div><div class="metric-value mv-blue">${[...new Set([...v.map(x=>x.canal),...g.map(x=>x.canal)])].length}</div></div>
     `;
 
     // Per canal summary — con desglose por producto
@@ -1363,7 +1363,42 @@ function _parseMonto(v){
 }
 
 let _importPendingRows=[];
-let _importPendingGasto=null;
+let _importPendingGastos=[];
+
+const GASTO_HEADER_MAP={
+  fecha:['fecha'],
+  mes:['mes'],
+  tipo_gasto:['tipo_gasto','tipo gasto','concepto','gasto'],
+  monto:['monto','valor','total'],
+};
+// Busca y parsea una hoja "GASTOS" con detalle día por día, si existe en el libro
+function _parseGastosDetallado(wb,canalFallback){
+  const nombreHoja=wb.SheetNames.find(n=>_normHeader(n).includes('gasto'));
+  if(!nombreHoja)return null;
+  const sheet=wb.Sheets[nombreHoja];
+  const raw=XLSX.utils.sheet_to_json(sheet,{defval:''});
+  if(!raw.length)return [];
+  const sampleKeys=Object.keys(raw[0]).map(k=>({orig:k,norm:_normHeader(k)}));
+  const fieldByHeader={};
+  Object.entries(GASTO_HEADER_MAP).forEach(([field,variants])=>{
+    const found=sampleKeys.find(k=>variants.includes(k.norm));
+    if(found)fieldByHeader[field]=found.orig;
+  });
+  if(!fieldByHeader.fecha||!fieldByHeader.monto)return null; // no parece tener estructura de detalle
+  const out=[];
+  raw.forEach(r=>{
+    const fecha=_excelDateToISO(r[fieldByHeader.fecha]);
+    const monto=_parseMonto(r[fieldByHeader.monto]);
+    if(!fecha||!monto)return;
+    const mes=(fieldByHeader.mes?String(r[fieldByHeader.mes]||'').trim():'')||mesFromDate(fecha);
+    out.push({
+      fecha, mes, canal:canalFallback,
+      tipo_gasto:fieldByHeader.tipo_gasto?String(r[fieldByHeader.tipo_gasto]||'').trim()||'Otro':'Otro',
+      monto,
+    });
+  });
+  return out;
+}
 
 const MESES_LISTA=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 function _mesFromFilename(filename){
@@ -1449,13 +1484,34 @@ async function handleImportVentas(event){
         fecha_pedido:null,num_guia:null,fecha_pago:null,novedad:null,
         notas:'Importado como total mensual (sin detalle por venta)',
       }]:[];
-      _importPendingGasto=totalGastos!=null?{fecha,mes,canal,tipo_gasto:'Gastos operativos del mes',monto:totalGastos}:null;
+
+      // Preferir hoja de gastos detallada (día por día) si existe; si no, usar el total consolidado
+      showLoading('Revisando hoja de gastos...');
+      const gastosDetallados=_parseGastosDetallado(wb,canal);
+      let gastosNuevos=[],gastosDuplicados=0,gastosOmitidos=0;
+      if(gastosDetallados&&gastosDetallados.length){
+        const {data:gastosExistentes,error:errG}=await db.from('gastos_mb')
+          .select('fecha,canal,tipo_gasto,monto').eq('canal',canal).eq('mes',mes);
+        hideLoading();
+        if(errG){toast('No se pudo verificar gastos: '+errG.message,'danger');return;}
+        const firmaG=r=>`${r.fecha}|${r.canal}|${r.tipo_gasto}|${r.monto}`;
+        const setG=new Set((gastosExistentes||[]).map(firmaG));
+        gastosNuevos=gastosDetallados.filter(r=>!setG.has(firmaG(r)));
+        gastosDuplicados=gastosDetallados.length-gastosNuevos.length;
+      }else{
+        hideLoading();
+        gastosNuevos=totalGastos!=null?[{fecha,mes,canal,tipo_gasto:'Gastos operativos del mes',monto:totalGastos}]:[];
+      }
+      _importPendingGastos=gastosNuevos;
+
       const msg=`Archivo de resumen detectado (${canal} - ${mes}).\n\n`+
         (totalVentas!=null?`Ventas del mes: $${totalVentas.toLocaleString('es-CO')}\n`:'')+
-        (totalGastos!=null?`Gastos del mes: $${totalGastos.toLocaleString('es-CO')}\n`:'')+
-        `\nSe creará 1 registro de venta consolidada y 1 de gasto. ¿Confirmas la importación?`;
+        (gastosDetallados&&gastosDetallados.length
+          ?`Gastos detallados: ${gastosNuevos.length} nuevos`+(gastosDuplicados?` (${gastosDuplicados} ya existían)`:'')+`\n`
+          :(totalGastos!=null?`Gastos del mes (total): $${totalGastos.toLocaleString('es-CO')}\n`:''))+
+        `\n¿Confirmas la importación?`;
       if(confirm(msg)){ await _insertImportedVentas(); }
-      else{ _importPendingRows=[];_importPendingGasto=null;toast('Importación cancelada'); }
+      else{ _importPendingRows=[];_importPendingGastos=[];toast('Importación cancelada'); }
       return;
     }
 
@@ -1515,23 +1571,45 @@ async function handleImportVentas(event){
     const rowsNuevas=rows.filter(r=>!existentesSet.has(firma(r)));
     const duplicadas=rows.length-rowsNuevas.length;
 
-    if(!rowsNuevas.length){
-      toast(`⚠️ Las ${rows.length} ventas de este archivo ya estaban importadas. No se cargó nada nuevo.`,'danger');
+    // Revisar hoja de gastos detallada, si el archivo la trae
+    showLoading('Revisando hoja de gastos...');
+    const canalPrincipal=canalesDetectados[0]||canalArchivo;
+    const gastosDetallados=_parseGastosDetallado(wb,canalPrincipal);
+    let gastosNuevos=[],gastosDuplicados=0;
+    if(gastosDetallados&&gastosDetallados.length){
+      const {data:gastosExistentes,error:errG}=await db.from('gastos_mb')
+        .select('fecha,canal,tipo_gasto,monto').eq('canal',canalPrincipal).in('mes',mesesDetectados);
+      hideLoading();
+      if(errG){toast('No se pudo verificar gastos: '+errG.message,'danger');return;}
+      const firmaG=r=>`${r.fecha}|${r.canal}|${r.tipo_gasto}|${r.monto}`;
+      const setG=new Set((gastosExistentes||[]).map(firmaG));
+      gastosNuevos=gastosDetallados.filter(r=>!setG.has(firmaG(r)));
+      gastosDuplicados=gastosDetallados.length-gastosNuevos.length;
+    }else{
+      hideLoading();
+    }
+    _importPendingGastos=gastosNuevos;
+
+    if(!rowsNuevas.length && !gastosNuevos.length){
+      toast(`⚠️ Todo lo de este archivo ya estaba importado. No se cargó nada nuevo.`,'danger');
       return;
     }
 
     _importPendingRows=rowsNuevas;
-    const meses=[...new Set(rowsNuevas.map(r=>r.mes))].join(', ');
-    const canales=[...new Set(rowsNuevas.map(r=>r.canal))].join(', ');
+    const meses=[...new Set(rowsNuevas.map(r=>r.mes))].join(', ')||mesesDetectados.join(', ');
+    const canales=[...new Set(rowsNuevas.map(r=>r.canal))].join(', ')||canalesDetectados.join(', ');
     const msg=`Se detectaron ${rows.length} ventas en el archivo.\n`+
       (omitidas?`- ${omitidas} omitidas (sin fecha/monto/canal)\n`:'')+
       (duplicadas?`- ${duplicadas} ya estaban importadas (se omiten)\n`:'')+
-      `- ${rowsNuevas.length} son nuevas y se van a importar\n\n`+
-      `Mes(es): ${meses}\nCanal(es): ${canales}\n\n¿Confirmas la importación?`;
+      `- ${rowsNuevas.length} son nuevas y se van a importar\n`+
+      (gastosDetallados&&gastosDetallados.length
+        ?`\nGastos: ${gastosNuevos.length} nuevos`+(gastosDuplicados?` (${gastosDuplicados} ya existían)`:'')+`\n`
+        :'')+
+      `\nMes(es): ${meses}\nCanal(es): ${canales}\n\n¿Confirmas la importación?`;
     if(confirm(msg)){
       await _insertImportedVentas();
     }else{
-      _importPendingRows=[];
+      _importPendingRows=[];_importPendingGastos=[];
       toast('Importación cancelada');
     }
   }catch(e){
@@ -1542,11 +1620,11 @@ async function handleImportVentas(event){
 
 async function _insertImportedVentas(){
   const rows=_importPendingRows;
-  const gasto=_importPendingGasto;
-  if(!rows.length&&!gasto)return;
+  const gastos=_importPendingGastos;
+  if(!rows.length&&!gastos.length)return;
   showLoading(`Importando datos...`);
   try{
-    let insertadas=0;
+    let insertadas=0,gastosInsertados=0;
     if(rows.length){
       const CHUNK=300;
       for(let i=0;i<rows.length;i+=CHUNK){
@@ -1556,17 +1634,22 @@ async function _insertImportedVentas(){
         insertadas+=lote.length;
       }
     }
-    if(gasto){
-      const{error}=await db.from('gastos_mb').insert(gasto);
-      if(error)throw error;
+    if(gastos.length){
+      const CHUNK=300;
+      for(let i=0;i<gastos.length;i+=CHUNK){
+        const lote=gastos.slice(i,i+CHUNK);
+        const{error}=await db.from('gastos_mb').insert(lote);
+        if(error)throw error;
+        gastosInsertados+=lote.length;
+      }
     }
-    toast(`✅ Importación completa: ${insertadas} venta(s)${gasto?' + 1 gasto':''}`,'success');
+    toast(`✅ Importación completa: ${insertadas} venta(s)${gastosInsertados?' + '+gastosInsertados+' gasto(s)':''}`,'success');
     cachedVentas=[];cachedGastos=[];
     await renderVentas();
   }catch(e){
     toast('Error al importar: '+e.message,'danger');
   }finally{
-    _importPendingRows=[];_importPendingGasto=null;
+    _importPendingRows=[];_importPendingGastos=[];
     hideLoading();
   }
 }
