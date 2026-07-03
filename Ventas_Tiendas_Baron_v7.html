@@ -1438,6 +1438,16 @@ async function handleImportVentas(event){
         toast('No se pudo interpretar el archivo de resumen (revisa canal, mes y totales)','danger');
         return;
       }
+      // Revisar si ya existe un consolidado para este canal/mes
+      showLoading('Revisando duplicados...');
+      const {data:yaExiste,error:errExist}=await db.from('ventas_mb')
+        .select('id').eq('canal',canal).eq('mes',mes).eq('tipo_producto','Consolidado mensual').limit(1);
+      hideLoading();
+      if(errExist){toast('No se pudo verificar duplicados: '+errExist.message,'danger');return;}
+      if(yaExiste&&yaExiste.length){
+        toast(`⚠️ Ya existe un consolidado de ${canal} - ${mes}. No se importó de nuevo.`,'danger');
+        return;
+      }
       _importPendingRows=totalVentas!=null?[{
         fecha, mes, canal,
         tipo_producto:'Consolidado mensual',
@@ -1499,11 +1509,33 @@ async function handleImportVentas(event){
     hideLoading();
     if(!rows.length){toast('No se encontraron filas válidas (revisa columnas Fecha, Monto y Canal)','danger');return;}
 
-    _importPendingRows=rows;
-    const meses=[...new Set(rows.map(r=>r.mes))].join(', ');
-    const canales=[...new Set(rows.map(r=>r.canal))].join(', ');
-    const msg=`Se detectaron ${rows.length} ventas válidas`+(omitidas?` (se omitieron ${omitidas} filas sin fecha/monto/canal)`:'')+
-      `.\n\nMes(es): ${meses}\nCanal(es): ${canales}\n\n¿Confirmas la importación a la base de datos?`;
+    // Revisar duplicados contra lo que ya existe en la base de datos
+    showLoading('Revisando duplicados...');
+    const canalesDetectados=[...new Set(rows.map(r=>r.canal))];
+    const mesesDetectados=[...new Set(rows.map(r=>r.mes))];
+    const {data:existentes,error:errExist}=await db.from('ventas_mb')
+      .select('fecha,canal,tipo_producto,medio_pago,monto,cliente,num_pedido')
+      .in('canal',canalesDetectados).in('mes',mesesDetectados);
+    hideLoading();
+    if(errExist){toast('No se pudo verificar duplicados: '+errExist.message,'danger');return;}
+    const firma=r=>`${r.fecha}|${r.canal}|${r.tipo_producto}|${r.medio_pago}|${r.monto}|${r.cliente||''}|${r.num_pedido||''}`;
+    const existentesSet=new Set((existentes||[]).map(firma));
+    const rowsNuevas=rows.filter(r=>!existentesSet.has(firma(r)));
+    const duplicadas=rows.length-rowsNuevas.length;
+
+    if(!rowsNuevas.length){
+      toast(`⚠️ Las ${rows.length} ventas de este archivo ya estaban importadas. No se cargó nada nuevo.`,'danger');
+      return;
+    }
+
+    _importPendingRows=rowsNuevas;
+    const meses=[...new Set(rowsNuevas.map(r=>r.mes))].join(', ');
+    const canales=[...new Set(rowsNuevas.map(r=>r.canal))].join(', ');
+    const msg=`Se detectaron ${rows.length} ventas en el archivo.\n`+
+      (omitidas?`- ${omitidas} omitidas (sin fecha/monto/canal)\n`:'')+
+      (duplicadas?`- ${duplicadas} ya estaban importadas (se omiten)\n`:'')+
+      `- ${rowsNuevas.length} son nuevas y se van a importar\n\n`+
+      `Mes(es): ${meses}\nCanal(es): ${canales}\n\n¿Confirmas la importación?`;
     if(confirm(msg)){
       await _insertImportedVentas();
     }else{
